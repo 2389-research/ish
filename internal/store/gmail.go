@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 type GmailThread struct {
@@ -153,4 +154,41 @@ func (s *Store) ListAllGmailMessages() ([]GmailMessageView, error) {
 func (s *Store) DeleteGmailMessage(id string) error {
 	_, err := s.db.Exec("DELETE FROM gmail_messages WHERE id = ?", id)
 	return err
+}
+
+func (s *Store) CreateGmailMessageFromForm(userID, from, subject, body string, labels []string) (*GmailMessageView, error) {
+	id := fmt.Sprintf("msg_%d", time.Now().UnixNano())
+	threadID := fmt.Sprintf("thr_%d", time.Now().UnixNano())
+
+	// Create thread first
+	s.db.Exec("INSERT INTO gmail_threads (id, user_id, snippet) VALUES (?, ?, ?)",
+		threadID, userID, truncate(body, 100))
+
+	// Build payload
+	payload := fmt.Sprintf(`{"headers":[{"name":"From","value":"%s"},{"name":"Subject","value":"%s"}],"body":{"data":"%s"}}`,
+		from, subject, base64.StdEncoding.EncodeToString([]byte(body)))
+
+	labelJSON, _ := json.Marshal(labels)
+
+	_, err := s.db.Exec(
+		"INSERT INTO gmail_messages (id, user_id, thread_id, label_ids, snippet, internal_date, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, userID, threadID, string(labelJSON), truncate(body, 100), time.Now().UnixMilli(), payload,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GmailMessageView{
+		ID:       id,
+		Subject:  subject,
+		Snippet:  truncate(body, 100),
+		LabelIDs: labels,
+	}, nil
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }

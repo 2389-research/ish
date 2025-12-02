@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900">New Message</h1>
+
+    <form hx-post="/admin/gmail" hx-target="#message-list" hx-swap="beforeend" class="bg-white rounded-lg shadow p-6 space-y-4 max-w-2xl">
+        <div>
+            <label class="block text-sm font-medium text-gray-700">From</label>
+            <input type="email" name="from" required class="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Subject</label>
+            <input type="text" name="subject" required class="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Body</label>
+            <textarea name="body" rows="4" class="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"></textarea>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Labels (comma-separated)</label>
+            <input type="text" name="labels" value="INBOX" class="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
+        </div>
+        <div class="flex gap-4">
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+            <a href="/admin/gmail" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Cancel</a>
+        </div>
+    </form>
+</div>
+{{end}}
