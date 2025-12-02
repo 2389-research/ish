@@ -28,3 +28,38 @@ func TestNewStore_CreatesDatabase(t *testing.T) {
 		}
 	}
 }
+
+func TestStore_CreateAndGetUser(t *testing.T) {
+	dbPath := "test_ish.db"
+	defer os.Remove(dbPath)
+
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	// Create user
+	err = s.CreateUser("harper")
+	if err != nil {
+		t.Fatalf("CreateUser() error = %v", err)
+	}
+
+	// Get user
+	exists, err := s.UserExists("harper")
+	if err != nil {
+		t.Fatalf("UserExists() error = %v", err)
+	}
+	if !exists {
+		t.Error("UserExists() = false, want true")
+	}
+
+	// Non-existent user
+	exists, err = s.UserExists("nobody")
+	if err != nil {
+		t.Fatalf("UserExists() error = %v", err)
+	}
+	if exists {
+		t.Error("UserExists() = true for non-existent user")
+	}
+}

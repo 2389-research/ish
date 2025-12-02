@@ -87,3 +87,14 @@ func (s *Store) migrate() error {
 	_, err := s.db.Exec(schema)
 	return err
 }
+
+func (s *Store) CreateUser(id string) error {
+	_, err := s.db.Exec("INSERT OR IGNORE INTO users (id) VALUES (?)", id)
+	return err
+}
+
+func (s *Store) UserExists(id string) (bool, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", id).Scan(&count)
+	return count > 0, err
+}
