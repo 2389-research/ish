@@ -3,7 +3,8 @@
     <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{{.ResourceName}}</td>
     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{.DisplayName}}</td>
     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.Email}}</td>
-    <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+    <td class="px-6 py-4 whitespace-nowrap text-right text-sm space-x-3">
+        <a href="/admin/people/{{.ID}}" class="text-blue-600 hover:text-blue-900">View</a>
         <button
             hx-delete="/admin/people/{{.ID}}"
             hx-target="#person-{{.ID}}"

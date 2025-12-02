@@ -2,9 +2,18 @@
 <div class="space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold text-gray-900">Calendar Events</h1>
-        <a href="/admin/calendar/new" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-            + New Event
-        </a>
+        <div class="flex gap-2">
+            <button hx-post="/admin/calendar/generate"
+                    hx-target="#event-list"
+                    hx-swap="afterbegin"
+                    class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2">
+                <span class="htmx-indicator">...</span>
+                <span>AI Generate</span>
+            </button>
+            <a href="/admin/calendar/new" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                + New Event
+            </a>
+        </div>
     </div>
 
     <div class="bg-white rounded-lg shadow overflow-hidden">

@@ -8,7 +8,8 @@
         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 mr-1">{{.}}</span>
         {{end}}
     </td>
-    <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+    <td class="px-6 py-4 whitespace-nowrap text-right text-sm space-x-3">
+        <a href="/admin/gmail/{{.ID}}" class="text-blue-600 hover:text-blue-900">View</a>
         <button
             hx-delete="/admin/gmail/{{.ID}}"
             hx-target="#msg-{{.ID}}"

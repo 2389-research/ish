@@ -12,12 +12,62 @@ import (
 //go:embed templates/*
 var templateFS embed.FS
 
-var templates *template.Template
+var (
+	layoutTmpl   *template.Template
+	pageTmpls    map[string]*template.Template
+	partialTmpls *template.Template
+)
 
 func init() {
-	templates = template.Must(template.ParseFS(templateFS, "templates/*.html", "templates/**/*.html"))
+	// Parse layout as base
+	layoutTmpl = template.Must(template.ParseFS(templateFS, "templates/layout.html"))
+
+	// Parse partials (row templates for htmx)
+	partialTmpls = template.Must(template.ParseFS(templateFS,
+		"templates/gmail/row.html",
+		"templates/calendar/row.html",
+		"templates/people/row.html",
+	))
+
+	// Parse each page template with its own copy of layout
+	pageTmpls = make(map[string]*template.Template)
+
+	pages := map[string]string{
+		"dashboard":     "templates/dashboard.html",
+		"guide":         "templates/guide.html",
+		"gmail-list":    "templates/gmail/list.html",
+		"gmail-form":    "templates/gmail/form.html",
+		"gmail-view":    "templates/gmail/view.html",
+		"calendar-list": "templates/calendar/list.html",
+		"calendar-form": "templates/calendar/form.html",
+		"calendar-view": "templates/calendar/view.html",
+		"people-list":   "templates/people/list.html",
+		"people-form":   "templates/people/form.html",
+		"people-view":   "templates/people/view.html",
+	}
+
+	for name, path := range pages {
+		// Clone layout and add the page template
+		tmpl := template.Must(layoutTmpl.Clone())
+		tmpl = template.Must(tmpl.ParseFS(templateFS, path))
+		// Also add partials for pages that need them
+		tmpl = template.Must(tmpl.ParseFS(templateFS,
+			"templates/gmail/row.html",
+			"templates/calendar/row.html",
+			"templates/people/row.html",
+		))
+		pageTmpls[name] = tmpl
+	}
 }
 
-func render(w io.Writer, name string, data any) error {
-	return templates.ExecuteTemplate(w, name, data)
+func renderPage(w io.Writer, page string, data any) error {
+	tmpl, ok := pageTmpls[page]
+	if !ok {
+		return nil
+	}
+	return tmpl.ExecuteTemplate(w, "layout", data)
+}
+
+func renderPartial(w io.Writer, name string, data any) error {
+	return partialTmpls.ExecuteTemplate(w, name, data)
 }

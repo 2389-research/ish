@@ -1,0 +1,190 @@
+{{define "content"}}
+<div class="space-y-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900">Implementation Guide</h1>
+        <p class="mt-2 text-gray-600">How to configure your Go code to use ISH instead of real Google APIs.</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Base URL Configuration</h2>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 mb-4">ISH exposes the same API structure as Google. Point your clients to:</p>
+            <code class="block bg-gray-100 p-3 rounded text-sm font-mono">http://localhost:9000</code>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Authentication</h2>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 mb-4">ISH uses a simple bearer token format. The user ID is extracted from the token:</p>
+            <code class="block bg-gray-100 p-3 rounded text-sm font-mono mb-4">Authorization: Bearer user:harper</code>
+            <p class="text-sm text-gray-600">Replace <code class="bg-gray-100 px-1 rounded">harper</code> with any user ID you want to use.</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Gmail API</h2>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 mb-4">Override the Gmail service endpoint:</p>
+            <pre class="bg-gray-900 text-green-400 p-4 rounded text-sm font-mono overflow-x-auto">import (
+    "google.golang.org/api/gmail/v1"
+    "google.golang.org/api/option"
+)
+
+func NewGmailService(ctx context.Context) (*gmail.Service, error) {
+    return gmail.NewService(ctx,
+        option.WithEndpoint("http://localhost:9000"),
+        option.WithAPIKey("user:harper"), // or use WithTokenSource
+    )
+}
+
+// Alternative: Use WithHTTPClient for custom auth
+func NewGmailServiceWithAuth(ctx context.Context) (*gmail.Service, error) {
+    client := &http.Client{
+        Transport: &addAuthTransport{
+            base:  http.DefaultTransport,
+            token: "user:harper",
+        },
+    }
+    return gmail.NewService(ctx,
+        option.WithEndpoint("http://localhost:9000"),
+        option.WithHTTPClient(client),
+    )
+}
+
+type addAuthTransport struct {
+    base  http.RoundTripper
+    token string
+}
+
+func (t *addAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+    req.Header.Set("Authorization", "Bearer "+t.token)
+    return t.base.RoundTrip(req)
+}</pre>
+            <p class="text-sm text-gray-600 mt-4"><strong>Available endpoints:</strong></p>
+            <ul class="list-disc list-inside text-sm text-gray-600 mt-2 space-y-1">
+                <li><code class="bg-gray-100 px-1 rounded">GET /gmail/v1/users/{userId}/messages</code> - List messages</li>
+                <li><code class="bg-gray-100 px-1 rounded">GET /gmail/v1/users/{userId}/messages/{id}</code> - Get message</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Calendar API</h2>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 mb-4">Override the Calendar service endpoint:</p>
+            <pre class="bg-gray-900 text-green-400 p-4 rounded text-sm font-mono overflow-x-auto">import (
+    "google.golang.org/api/calendar/v3"
+    "google.golang.org/api/option"
+)
+
+func NewCalendarService(ctx context.Context) (*calendar.Service, error) {
+    client := &http.Client{
+        Transport: &addAuthTransport{
+            base:  http.DefaultTransport,
+            token: "user:harper",
+        },
+    }
+    return calendar.NewService(ctx,
+        option.WithEndpoint("http://localhost:9000"),
+        option.WithHTTPClient(client),
+    )
+}</pre>
+            <p class="text-sm text-gray-600 mt-4"><strong>Available endpoints:</strong></p>
+            <ul class="list-disc list-inside text-sm text-gray-600 mt-2 space-y-1">
+                <li><code class="bg-gray-100 px-1 rounded">GET /calendar/v3/calendars/{calendarId}/events</code> - List events</li>
+                <li><code class="bg-gray-100 px-1 rounded">GET /calendar/v3/calendars/{calendarId}/events/{eventId}</code> - Get event</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">People API</h2>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 mb-4">Override the People service endpoint:</p>
+            <pre class="bg-gray-900 text-green-400 p-4 rounded text-sm font-mono overflow-x-auto">import (
+    "google.golang.org/api/people/v1"
+    "google.golang.org/api/option"
+)
+
+func NewPeopleService(ctx context.Context) (*people.Service, error) {
+    client := &http.Client{
+        Transport: &addAuthTransport{
+            base:  http.DefaultTransport,
+            token: "user:harper",
+        },
+    }
+    return people.NewService(ctx,
+        option.WithEndpoint("http://localhost:9000"),
+        option.WithHTTPClient(client),
+    )
+}</pre>
+            <p class="text-sm text-gray-600 mt-4"><strong>Available endpoints:</strong></p>
+            <ul class="list-disc list-inside text-sm text-gray-600 mt-2 space-y-1">
+                <li><code class="bg-gray-100 px-1 rounded">GET /v1/people:searchContacts</code> - Search contacts</li>
+                <li><code class="bg-gray-100 px-1 rounded">GET /v1/{resourceName}</code> - Get person (e.g., people/c123)</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Environment-Based Switching</h2>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 mb-4">Use environment variables to switch between real and fake APIs:</p>
+            <pre class="bg-gray-900 text-green-400 p-4 rounded text-sm font-mono overflow-x-auto">import "os"
+
+func getGoogleEndpoint() string {
+    if ep := os.Getenv("GOOGLE_API_ENDPOINT"); ep != "" {
+        return ep // Use ISH: "http://localhost:9000"
+    }
+    return "" // Empty = use real Google APIs
+}
+
+func NewGmailService(ctx context.Context) (*gmail.Service, error) {
+    opts := []option.ClientOption{}
+
+    if ep := getGoogleEndpoint(); ep != "" {
+        opts = append(opts,
+            option.WithEndpoint(ep),
+            option.WithHTTPClient(ishAuthClient()),
+        )
+    } else {
+        // Real Google auth
+        opts = append(opts, option.WithCredentialsFile("credentials.json"))
+    }
+
+    return gmail.NewService(ctx, opts...)
+}</pre>
+            <p class="text-sm text-gray-600 mt-4">Then run your app with:</p>
+            <code class="block bg-gray-100 p-3 rounded text-sm font-mono mt-2">GOOGLE_API_ENDPOINT=http://localhost:9000 go run .</code>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Quick Start</h2>
+        </div>
+        <div class="px-6 py-4">
+            <ol class="list-decimal list-inside text-sm text-gray-600 space-y-2">
+                <li>Start ISH: <code class="bg-gray-100 px-1 rounded">./ish serve</code></li>
+                <li>Seed test data: <code class="bg-gray-100 px-1 rounded">./ish seed</code></li>
+                <li>Point your app to <code class="bg-gray-100 px-1 rounded">http://localhost:9000</code></li>
+                <li>Use bearer token <code class="bg-gray-100 px-1 rounded">user:harper</code> for auth</li>
+                <li>Use this admin UI to view/manage test data</li>
+            </ol>
+        </div>
+    </div>
+</div>
+{{end}}

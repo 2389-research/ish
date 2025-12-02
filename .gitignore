@@ -1,1 +1,21 @@
 .scratch/
+
+# Binary
+ish
+
+# Database files
+*.db
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

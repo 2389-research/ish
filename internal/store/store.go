@@ -36,7 +36,8 @@ func (s *Store) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
 		id TEXT PRIMARY KEY,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		history_id INTEGER DEFAULT 1
 	);
 
 	CREATE TABLE IF NOT EXISTS gmail_labels (
@@ -59,13 +60,24 @@ func (s *Store) migrate() error {
 		label_ids TEXT,
 		snippet TEXT,
 		internal_date INTEGER,
-		payload TEXT
+		payload TEXT,
+		history_id INTEGER DEFAULT 0
+	);
+
+	CREATE TABLE IF NOT EXISTS gmail_attachments (
+		id TEXT PRIMARY KEY,
+		message_id TEXT NOT NULL REFERENCES gmail_messages(id),
+		filename TEXT,
+		mime_type TEXT,
+		size INTEGER,
+		data TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS calendars (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id),
-		summary TEXT
+		summary TEXT,
+		sync_token TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS calendar_events (
@@ -75,17 +87,51 @@ func (s *Store) migrate() error {
 		description TEXT,
 		start_time TEXT,
 		end_time TEXT,
-		attendees TEXT
+		attendees TEXT,
+		location TEXT,
+		organizer_email TEXT,
+		organizer_name TEXT,
+		recurrence TEXT,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS people (
 		resource_name TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id),
-		data TEXT
+		data TEXT,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS sync_tokens (
+		id TEXT PRIMARY KEY,
+		resource_type TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		token TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 	`
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add columns to existing tables if they don't exist (for migrations)
+	migrations := []string{
+		"ALTER TABLE users ADD COLUMN history_id INTEGER DEFAULT 1",
+		"ALTER TABLE gmail_messages ADD COLUMN history_id INTEGER DEFAULT 0",
+		"ALTER TABLE calendars ADD COLUMN sync_token TEXT",
+		"ALTER TABLE calendar_events ADD COLUMN location TEXT",
+		"ALTER TABLE calendar_events ADD COLUMN organizer_email TEXT",
+		"ALTER TABLE calendar_events ADD COLUMN organizer_name TEXT",
+		"ALTER TABLE calendar_events ADD COLUMN recurrence TEXT",
+		"ALTER TABLE calendar_events ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+		"ALTER TABLE people ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+	}
+	for _, m := range migrations {
+		s.db.Exec(m) // Ignore errors for already existing columns
+	}
+
+	return nil
 }
 
 func (s *Store) CreateUser(id string) error {

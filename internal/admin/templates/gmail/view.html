@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-900">Message Details</h1>
+        <a href="/admin/gmail" class="text-blue-600 hover:text-blue-800">&larr; Back to list</a>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <dl class="divide-y divide-gray-200">
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">ID</dt>
+                <dd class="text-sm text-gray-900 col-span-2 font-mono">{{.ID}}</dd>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">Thread ID</dt>
+                <dd class="text-sm text-gray-900 col-span-2 font-mono">{{.ThreadID}}</dd>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">Subject</dt>
+                <dd class="text-sm text-gray-900 col-span-2 font-semibold">{{.Subject}}</dd>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">From</dt>
+                <dd class="text-sm text-gray-900 col-span-2">{{.From}}</dd>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">To</dt>
+                <dd class="text-sm text-gray-900 col-span-2">{{.To}}</dd>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">Date</dt>
+                <dd class="text-sm text-gray-900 col-span-2">{{.Date}}</dd>
+            </div>
+            <div class="px-6 py-4 grid grid-cols-3 gap-4">
+                <dt class="text-sm font-medium text-gray-500">Labels</dt>
+                <dd class="text-sm col-span-2">
+                    {{range .LabelIDs}}
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 mr-1">{{.}}</span>
+                    {{end}}
+                </dd>
+            </div>
+            <div class="px-6 py-4">
+                <dt class="text-sm font-medium text-gray-500 mb-2">Body</dt>
+                <dd class="text-sm text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded">{{.Body}}</dd>
+            </div>
+        </dl>
+    </div>
+</div>
+{{end}}

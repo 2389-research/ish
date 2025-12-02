@@ -4,11 +4,14 @@
 package main
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,6 +21,7 @@ import (
 	"github.com/2389/ish/internal/calendar"
 	"github.com/2389/ish/internal/gmail"
 	"github.com/2389/ish/internal/people"
+	"github.com/2389/ish/internal/seed"
 	"github.com/2389/ish/internal/store"
 )
 
@@ -123,51 +127,111 @@ func runReset(cmd *cobra.Command, args []string) error {
 }
 
 func seedData(s *store.Store) error {
+	userID := "harper"
+
 	// Create default user
-	if err := s.CreateUser("harper"); err != nil {
+	if err := s.CreateUser(userID); err != nil {
 		return err
 	}
-	log.Println("Created user: harper")
+	log.Println("Created user:", userID)
 
-	// Gmail data
-	s.CreateGmailThread(&store.GmailThread{ID: "thr_1", UserID: "harper", Snippet: "Welcome to ISH"})
-	s.CreateGmailThread(&store.GmailThread{ID: "thr_2", UserID: "harper", Snippet: "Meeting tomorrow"})
+	// Generate data using AI or static fallback
+	gen := seed.NewGenerator(userID)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
-	messages := []store.GmailMessage{
-		{ID: "msg_1", UserID: "harper", ThreadID: "thr_1", LabelIDs: []string{"INBOX"}, Snippet: "Welcome to ISH, your fake Google API server!", InternalDate: 1733000000000, Payload: `{"headers":[{"name":"From","value":"ish@example.com"},{"name":"Subject","value":"Welcome to ISH"}]}`},
-		{ID: "msg_2", UserID: "harper", ThreadID: "thr_1", LabelIDs: []string{"INBOX"}, Snippet: "Getting started guide attached.", InternalDate: 1733000100000, Payload: `{"headers":[{"name":"From","value":"ish@example.com"},{"name":"Subject","value":"Re: Welcome to ISH"}]}`},
-		{ID: "msg_3", UserID: "harper", ThreadID: "thr_2", LabelIDs: []string{"INBOX", "STARRED"}, Snippet: "Don't forget our meeting tomorrow at 10am.", InternalDate: 1733000200000, Payload: `{"headers":[{"name":"From","value":"alice@example.com"},{"name":"Subject","value":"Meeting tomorrow"}]}`},
-		{ID: "msg_4", UserID: "harper", ThreadID: "thr_2", LabelIDs: []string{"INBOX"}, Snippet: "I'll bring the coffee!", InternalDate: 1733000300000, Payload: `{"headers":[{"name":"From","value":"bob@example.com"},{"name":"Subject","value":"Re: Meeting tomorrow"}]}`},
-		{ID: "msg_5", UserID: "harper", ThreadID: "thr_2", LabelIDs: []string{"INBOX", "IMPORTANT"}, Snippet: "Agenda attached for review.", InternalDate: 1733000400000, Payload: `{"headers":[{"name":"From","value":"alice@example.com"},{"name":"Subject","value":"Re: Meeting tomorrow"}]}`},
+	data, err := gen.Generate(ctx, 50, 25, 25)
+	if err != nil {
+		return fmt.Errorf("failed to generate seed data: %w", err)
 	}
-	for _, m := range messages {
-		s.CreateGmailMessage(&m)
-	}
-	log.Printf("Created %d Gmail messages", len(messages))
 
-	// Calendar data
-	s.CreateCalendar(&store.Calendar{ID: "primary", UserID: "harper", Summary: "Primary Calendar"})
+	// Insert Gmail data
+	baseTime := time.Now().Add(-7 * 24 * time.Hour).UnixMilli()
+	for i, email := range data.Emails {
+		threadID := fmt.Sprintf("thr_%d", i+1)
+		msgID := fmt.Sprintf("msg_%d", i+1)
 
-	events := []store.CalendarEvent{
-		{ID: "evt_1", CalendarID: "primary", Summary: "Team Standup", Description: "Daily sync", StartTime: "2025-12-01T09:00:00Z", EndTime: "2025-12-01T09:30:00Z", Attendees: `[{"email":"harper@example.com"},{"email":"alice@example.com"}]`},
-		{ID: "evt_2", CalendarID: "primary", Summary: "Project Review", Description: "Q4 review", StartTime: "2025-12-01T14:00:00Z", EndTime: "2025-12-01T15:00:00Z", Attendees: `[{"email":"harper@example.com"},{"email":"bob@example.com"}]`},
-		{ID: "evt_3", CalendarID: "primary", Summary: "Coffee Chat", Description: "Casual sync", StartTime: "2025-12-02T10:00:00Z", EndTime: "2025-12-02T10:30:00Z", Attendees: `[{"email":"harper@example.com"}]`},
-	}
-	for _, e := range events {
-		s.CreateCalendarEvent(&e)
-	}
-	log.Printf("Created %d Calendar events", len(events))
+		// Create thread
+		snippet := email.Body
+		if len(snippet) > 100 {
+			snippet = snippet[:100] + "..."
+		}
+		s.CreateGmailThread(&store.GmailThread{
+			ID:      threadID,
+			UserID:  userID,
+			Snippet: snippet,
+		})
 
-	// People data
-	contacts := []store.Person{
-		{ResourceName: "people/c1", UserID: "harper", Data: `{"names":[{"displayName":"Alice Smith"}],"emailAddresses":[{"value":"alice@example.com"}],"photos":[{"url":"https://example.com/alice.png"}]}`},
-		{ResourceName: "people/c2", UserID: "harper", Data: `{"names":[{"displayName":"Bob Jones"}],"emailAddresses":[{"value":"bob@example.com"}],"photos":[{"url":"https://example.com/bob.png"}]}`},
-		{ResourceName: "people/c3", UserID: "harper", Data: `{"names":[{"displayName":"Charlie Brown"}],"emailAddresses":[{"value":"charlie@example.com"}],"photos":[{"url":"https://example.com/charlie.png"}]}`},
+		// Build payload with headers and body
+		bodyEncoded := base64.StdEncoding.EncodeToString([]byte(email.Body))
+		payload := fmt.Sprintf(`{"headers":[{"name":"From","value":"%s"},{"name":"To","value":"%s"},{"name":"Subject","value":"%s"}],"body":{"data":"%s"}}`,
+			email.From, email.To, email.Subject, bodyEncoded)
+
+		s.CreateGmailMessage(&store.GmailMessage{
+			ID:           msgID,
+			UserID:       userID,
+			ThreadID:     threadID,
+			LabelIDs:     email.Labels,
+			Snippet:      snippet,
+			InternalDate: baseTime + int64(i*60000), // 1 min apart
+			Payload:      payload,
+		})
 	}
-	for _, p := range contacts {
-		s.CreatePerson(&p)
+	log.Printf("Created %d Gmail messages", len(data.Emails))
+
+	// Insert Calendar data
+	s.CreateCalendar(&store.Calendar{ID: "primary", UserID: userID, Summary: "Primary Calendar"})
+
+	for i, event := range data.Events {
+		attendeesJSON, _ := json.Marshal(func() []map[string]string {
+			result := make([]map[string]string, len(event.Attendees))
+			for j, email := range event.Attendees {
+				result[j] = map[string]string{"email": email}
+			}
+			return result
+		}())
+
+		s.CreateCalendarEvent(&store.CalendarEvent{
+			ID:          fmt.Sprintf("evt_%d", i+1),
+			CalendarID:  "primary",
+			Summary:     event.Summary,
+			Description: event.Description,
+			StartTime:   event.StartTime,
+			EndTime:     event.EndTime,
+			Attendees:   string(attendeesJSON),
+		})
 	}
-	log.Printf("Created %d People contacts", len(contacts))
+	log.Printf("Created %d Calendar events", len(data.Events))
+
+	// Insert People data
+	for i, contact := range data.Contacts {
+		personData := map[string]any{
+			"names": []map[string]string{
+				{"displayName": contact.Name},
+			},
+			"emailAddresses": []map[string]string{
+				{"value": contact.Email},
+			},
+		}
+		if contact.Phone != "" {
+			personData["phoneNumbers"] = []map[string]string{
+				{"value": contact.Phone},
+			}
+		}
+		if contact.Company != "" {
+			personData["organizations"] = []map[string]string{
+				{"name": contact.Company},
+			}
+		}
+		dataJSON, _ := json.Marshal(personData)
+
+		s.CreatePerson(&store.Person{
+			ResourceName: fmt.Sprintf("people/c%d", i+1),
+			UserID:       userID,
+			Data:         string(dataJSON),
+		})
+	}
+	log.Printf("Created %d People contacts", len(data.Contacts))
 
 	log.Println("Seed complete!")
 	return nil

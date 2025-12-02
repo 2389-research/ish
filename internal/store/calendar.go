@@ -18,13 +18,18 @@ type Calendar struct {
 }
 
 type CalendarEvent struct {
-	ID          string
-	CalendarID  string
-	Summary     string
-	Description string
-	StartTime   string
-	EndTime     string
-	Attendees   string
+	ID             string
+	CalendarID     string
+	Summary        string
+	Description    string
+	StartTime      string
+	EndTime        string
+	Attendees      string
+	Location       string
+	OrganizerEmail string
+	OrganizerName  string
+	Recurrence     string
+	UpdatedAt      string
 }
 
 func (s *Store) CreateCalendar(c *Calendar) error {
@@ -52,7 +57,9 @@ func (s *Store) ListCalendarEvents(calendarID string, maxResults int, pageToken 
 		}
 	}
 
-	sqlQuery := "SELECT id, calendar_id, summary, description, start_time, end_time, attendees FROM calendar_events WHERE calendar_id = ?"
+	sqlQuery := `SELECT id, calendar_id, summary, description, start_time, end_time, attendees,
+		COALESCE(location, ''), COALESCE(organizer_email, ''), COALESCE(organizer_name, ''),
+		COALESCE(recurrence, ''), COALESCE(updated_at, '') FROM calendar_events WHERE calendar_id = ?`
 	args := []any{calendarID}
 
 	if timeMin != "" {
@@ -76,7 +83,8 @@ func (s *Store) ListCalendarEvents(calendarID string, maxResults int, pageToken 
 	var events []CalendarEvent
 	for rows.Next() {
 		var e CalendarEvent
-		err := rows.Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees)
+		err := rows.Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees,
+			&e.Location, &e.OrganizerEmail, &e.OrganizerName, &e.Recurrence, &e.UpdatedAt)
 		if err != nil {
 			return nil, "", err
 		}
@@ -95,9 +103,12 @@ func (s *Store) ListCalendarEvents(calendarID string, maxResults int, pageToken 
 func (s *Store) GetCalendarEvent(calendarID, eventID string) (*CalendarEvent, error) {
 	var e CalendarEvent
 	err := s.db.QueryRow(
-		"SELECT id, calendar_id, summary, description, start_time, end_time, attendees FROM calendar_events WHERE calendar_id = ? AND id = ?",
+		`SELECT id, calendar_id, summary, description, start_time, end_time, attendees,
+		COALESCE(location, ''), COALESCE(organizer_email, ''), COALESCE(organizer_name, ''),
+		COALESCE(recurrence, ''), COALESCE(updated_at, '') FROM calendar_events WHERE calendar_id = ? AND id = ?`,
 		calendarID, eventID,
-	).Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees)
+	).Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees,
+		&e.Location, &e.OrganizerEmail, &e.OrganizerName, &e.Recurrence, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("event not found")
 	}
@@ -108,7 +119,9 @@ func (s *Store) GetCalendarEvent(calendarID, eventID string) (*CalendarEvent, er
 }
 
 func (s *Store) ListAllCalendarEvents() ([]CalendarEvent, error) {
-	rows, err := s.db.Query("SELECT id, calendar_id, summary, description, start_time, end_time, attendees FROM calendar_events ORDER BY start_time")
+	rows, err := s.db.Query(`SELECT id, calendar_id, summary, description, start_time, end_time, attendees,
+		COALESCE(location, ''), COALESCE(organizer_email, ''), COALESCE(organizer_name, ''),
+		COALESCE(recurrence, ''), COALESCE(updated_at, '') FROM calendar_events ORDER BY start_time`)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +130,8 @@ func (s *Store) ListAllCalendarEvents() ([]CalendarEvent, error) {
 	var events []CalendarEvent
 	for rows.Next() {
 		var e CalendarEvent
-		if err := rows.Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees); err != nil {
+		if err := rows.Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees,
+			&e.Location, &e.OrganizerEmail, &e.OrganizerName, &e.Recurrence, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)
@@ -154,4 +168,66 @@ func (s *Store) CreateCalendarEventFromForm(summary, description, start, end str
 func (s *Store) DeleteCalendarEvent(id string) error {
 	_, err := s.db.Exec("DELETE FROM calendar_events WHERE id = ?", id)
 	return err
+}
+
+// GetCalendarSyncToken returns the current sync token for a calendar.
+func (s *Store) GetCalendarSyncToken(calendarID string) (string, error) {
+	var token string
+	err := s.db.QueryRow("SELECT COALESCE(sync_token, '') FROM calendars WHERE id = ?", calendarID).Scan(&token)
+	if err != nil || token == "" {
+		// If calendar doesn't exist or no sync token, generate a new token
+		token = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	}
+	return token, nil
+}
+
+// UpdateCalendarSyncToken updates the sync token for a calendar.
+func (s *Store) UpdateCalendarSyncToken(calendarID string) (string, error) {
+	token := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	_, err := s.db.Exec("UPDATE calendars SET sync_token = ? WHERE id = ?", token, calendarID)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// ListCalendarEventsSince returns events updated since the given sync token.
+func (s *Store) ListCalendarEventsSince(calendarID string, syncToken string, maxResults int) ([]CalendarEvent, string, error) {
+	// Decode the sync token to get a timestamp
+	var sinceTime int64
+	if syncToken != "" {
+		decoded, err := base64.StdEncoding.DecodeString(syncToken)
+		if err == nil {
+			sinceTime, _ = strconv.ParseInt(string(decoded), 10, 64)
+		}
+	}
+
+	// Convert nanoseconds to timestamp for comparison
+	sinceTimestamp := time.Unix(0, sinceTime).Format(time.RFC3339)
+
+	// Use COALESCE in WHERE clause to handle NULL updated_at values (treat them as epoch 0)
+	sqlQuery := `SELECT id, calendar_id, summary, description, start_time, end_time, attendees,
+		COALESCE(location, ''), COALESCE(organizer_email, ''), COALESCE(organizer_name, ''),
+		COALESCE(recurrence, ''), COALESCE(updated_at, '') FROM calendar_events
+		WHERE calendar_id = ? AND COALESCE(updated_at, '1970-01-01T00:00:00Z') > ? ORDER BY updated_at ASC LIMIT ?`
+
+	rows, err := s.db.Query(sqlQuery, calendarID, sinceTimestamp, maxResults)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var events []CalendarEvent
+	for rows.Next() {
+		var e CalendarEvent
+		if err := rows.Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees,
+			&e.Location, &e.OrganizerEmail, &e.OrganizerName, &e.Recurrence, &e.UpdatedAt); err != nil {
+			return nil, "", err
+		}
+		events = append(events, e)
+	}
+
+	// Generate new sync token based on current time
+	newToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	return events, newToken, nil
 }

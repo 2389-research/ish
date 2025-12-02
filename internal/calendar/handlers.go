@@ -39,8 +39,25 @@ func (h *Handlers) listEvents(w http.ResponseWriter, r *http.Request) {
 	pageToken := r.URL.Query().Get("pageToken")
 	timeMin := r.URL.Query().Get("timeMin")
 	timeMax := r.URL.Query().Get("timeMax")
+	syncToken := r.URL.Query().Get("syncToken")
 
-	events, nextToken, err := h.store.ListCalendarEvents(calendarID, maxResults, pageToken, timeMin, timeMax)
+	var events []store.CalendarEvent
+	var nextToken string
+	var nextSyncToken string
+	var err error
+
+	if syncToken != "" {
+		// Incremental sync - get events since last sync
+		events, nextSyncToken, err = h.store.ListCalendarEventsSince(calendarID, syncToken, maxResults)
+	} else {
+		// Full sync
+		events, nextToken, err = h.store.ListCalendarEvents(calendarID, maxResults, pageToken, timeMin, timeMax)
+		if err == nil && nextToken == "" {
+			// Generate sync token for subsequent incremental syncs
+			nextSyncToken, _ = h.store.GetCalendarSyncToken(calendarID)
+		}
+	}
+
 	if err != nil {
 		writeError(w, 500, "Internal error", "INTERNAL")
 		return
@@ -52,7 +69,7 @@ func (h *Handlers) listEvents(w http.ResponseWriter, r *http.Request) {
 		var attendees []any
 		json.Unmarshal([]byte(e.Attendees), &attendees)
 
-		items[i] = map[string]any{
+		item := map[string]any{
 			"id":          e.ID,
 			"summary":     e.Summary,
 			"description": e.Description,
@@ -60,6 +77,29 @@ func (h *Handlers) listEvents(w http.ResponseWriter, r *http.Request) {
 			"end":         map[string]string{"dateTime": e.EndTime},
 			"attendees":   attendees,
 		}
+
+		// Include optional fields if present
+		if e.Location != "" {
+			item["location"] = e.Location
+		}
+		if e.OrganizerEmail != "" || e.OrganizerName != "" {
+			item["organizer"] = map[string]any{
+				"email":       e.OrganizerEmail,
+				"displayName": e.OrganizerName,
+			}
+		}
+		if e.Recurrence != "" {
+			var recurrence []string
+			json.Unmarshal([]byte(e.Recurrence), &recurrence)
+			if len(recurrence) > 0 {
+				item["recurrence"] = recurrence
+			}
+		}
+		if e.UpdatedAt != "" {
+			item["updated"] = e.UpdatedAt
+		}
+
+		items[i] = item
 	}
 
 	resp := map[string]any{
@@ -68,6 +108,9 @@ func (h *Handlers) listEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if nextToken != "" {
 		resp["nextPageToken"] = nextToken
+	}
+	if nextSyncToken != "" {
+		resp["nextSyncToken"] = nextSyncToken
 	}
 
 	writeJSON(w, resp)
@@ -94,6 +137,27 @@ func (h *Handlers) getEvent(w http.ResponseWriter, r *http.Request) {
 		"start":       map[string]string{"dateTime": evt.StartTime},
 		"end":         map[string]string{"dateTime": evt.EndTime},
 		"attendees":   attendees,
+	}
+
+	// Include optional fields if present
+	if evt.Location != "" {
+		resp["location"] = evt.Location
+	}
+	if evt.OrganizerEmail != "" || evt.OrganizerName != "" {
+		resp["organizer"] = map[string]any{
+			"email":       evt.OrganizerEmail,
+			"displayName": evt.OrganizerName,
+		}
+	}
+	if evt.Recurrence != "" {
+		var recurrence []string
+		json.Unmarshal([]byte(evt.Recurrence), &recurrence)
+		if len(recurrence) > 0 {
+			resp["recurrence"] = recurrence
+		}
+	}
+	if evt.UpdatedAt != "" {
+		resp["updated"] = evt.UpdatedAt
 	}
 
 	writeJSON(w, resp)
