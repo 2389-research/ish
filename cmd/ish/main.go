@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/spf13/cobra"
+	"github.com/2389/ish/internal/admin"
 	"github.com/2389/ish/internal/auth"
 	"github.com/2389/ish/internal/calendar"
 	"github.com/2389/ish/internal/gmail"
@@ -93,6 +94,7 @@ func newServer(dbPath string) (http.Handler, error) {
 	gmail.NewHandlers(s).RegisterRoutes(r)
 	calendar.NewHandlers(s).RegisterRoutes(r)
 	people.NewHandlers(s).RegisterRoutes(r)
+	admin.NewHandlers(s).RegisterRoutes(r)
 
 	return r, nil
 }

@@ -1,0 +1,25 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <a href="/admin/gmail" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition">
+            <h2 class="text-lg font-semibold text-gray-700">Gmail</h2>
+            <p class="text-3xl font-bold text-blue-600">{{.MessageCount}}</p>
+            <p class="text-sm text-gray-500">messages in {{.ThreadCount}} threads</p>
+        </a>
+
+        <a href="/admin/calendar" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition">
+            <h2 class="text-lg font-semibold text-gray-700">Calendar</h2>
+            <p class="text-3xl font-bold text-green-600">{{.EventCount}}</p>
+            <p class="text-sm text-gray-500">events</p>
+        </a>
+
+        <a href="/admin/people" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition">
+            <h2 class="text-lg font-semibold text-gray-700">People</h2>
+            <p class="text-3xl font-bold text-purple-600">{{.PeopleCount}}</p>
+            <p class="text-sm text-gray-500">contacts</p>
+        </a>
+    </div>
+</div>
+{{end}}

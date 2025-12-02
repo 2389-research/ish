@@ -98,3 +98,19 @@ func (s *Store) UserExists(id string) (bool, error) {
 	err := s.db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", id).Scan(&count)
 	return count > 0, err
 }
+
+type Counts struct {
+	Messages int
+	Threads  int
+	Events   int
+	People   int
+}
+
+func (s *Store) GetCounts() (*Counts, error) {
+	var c Counts
+	s.db.QueryRow("SELECT COUNT(*) FROM gmail_messages").Scan(&c.Messages)
+	s.db.QueryRow("SELECT COUNT(*) FROM gmail_threads").Scan(&c.Threads)
+	s.db.QueryRow("SELECT COUNT(*) FROM calendar_events").Scan(&c.Events)
+	s.db.QueryRow("SELECT COUNT(*) FROM people").Scan(&c.People)
+	return &c, nil
+}
