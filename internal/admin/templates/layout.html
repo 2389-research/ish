@@ -1,0 +1,29 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISH Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <a href="/admin/" class="text-xl font-bold text-gray-800">ISH Admin</a>
+                <div class="flex gap-4">
+                    <a href="/admin/gmail" class="text-gray-600 hover:text-gray-900">Gmail</a>
+                    <a href="/admin/calendar" class="text-gray-600 hover:text-gray-900">Calendar</a>
+                    <a href="/admin/people" class="text-gray-600 hover:text-gray-900">People</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        {{template "content" .}}
+    </main>
+</body>
+</html>
+{{end}}
