@@ -6,8 +6,8 @@ package admin
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/2389/ish/internal/store"
+	"github.com/go-chi/chi/v5"
 )
 
 type Handlers struct {
@@ -21,6 +21,8 @@ func NewHandlers(s *store.Store) *Handlers {
 func (h *Handlers) RegisterRoutes(r chi.Router) {
 	r.Route("/admin", func(r chi.Router) {
 		r.Get("/", h.dashboard)
+		r.Get("/gmail", h.gmailList)
+		r.Delete("/gmail/{id}", h.gmailDelete)
 	})
 }
 
@@ -38,4 +40,26 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
 		"EventCount":   counts.Events,
 		"PeopleCount":  counts.People,
 	})
+}
+
+func (h *Handlers) gmailList(w http.ResponseWriter, r *http.Request) {
+	messages, err := h.store.ListAllGmailMessages()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "layout", map[string]any{
+		"Messages": messages,
+	})
+}
+
+func (h *Handlers) gmailDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.store.DeleteGmailMessage(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }

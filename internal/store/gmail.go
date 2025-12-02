@@ -27,6 +27,13 @@ type GmailMessage struct {
 	Payload      string
 }
 
+type GmailMessageView struct {
+	ID       string
+	Subject  string
+	Snippet  string
+	LabelIDs []string
+}
+
 func (s *Store) CreateGmailThread(t *GmailThread) error {
 	_, err := s.db.Exec(
 		"INSERT INTO gmail_threads (id, user_id, snippet) VALUES (?, ?, ?)",
@@ -106,4 +113,44 @@ func (s *Store) GetGmailMessage(userID, messageID string) (*GmailMessage, error)
 	}
 	json.Unmarshal([]byte(labelJSON), &m.LabelIDs)
 	return &m, nil
+}
+
+func (s *Store) ListAllGmailMessages() ([]GmailMessageView, error) {
+	rows, err := s.db.Query("SELECT id, snippet, label_ids, payload FROM gmail_messages ORDER BY internal_date DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []GmailMessageView
+	for rows.Next() {
+		var m GmailMessageView
+		var labelJSON, payload string
+		if err := rows.Scan(&m.ID, &m.Snippet, &labelJSON, &payload); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(labelJSON), &m.LabelIDs)
+
+		// Extract subject from payload
+		var p struct {
+			Headers []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"headers"`
+		}
+		json.Unmarshal([]byte(payload), &p)
+		for _, h := range p.Headers {
+			if h.Name == "Subject" {
+				m.Subject = h.Value
+				break
+			}
+		}
+		messages = append(messages, m)
+	}
+	return messages, nil
+}
+
+func (s *Store) DeleteGmailMessage(id string) error {
+	_, err := s.db.Exec("DELETE FROM gmail_messages WHERE id = ?", id)
+	return err
 }

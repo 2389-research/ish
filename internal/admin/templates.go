@@ -15,7 +15,7 @@ var templateFS embed.FS
 var templates *template.Template
 
 func init() {
-	templates = template.Must(template.ParseFS(templateFS, "templates/*.html"))
+	templates = template.Must(template.ParseFS(templateFS, "templates/*.html", "templates/**/*.html"))
 }
 
 func render(w io.Writer, name string, data any) error {
