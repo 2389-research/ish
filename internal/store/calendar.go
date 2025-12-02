@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 type Calendar struct {
@@ -104,4 +105,53 @@ func (s *Store) GetCalendarEvent(calendarID, eventID string) (*CalendarEvent, er
 		return nil, err
 	}
 	return &e, nil
+}
+
+func (s *Store) ListAllCalendarEvents() ([]CalendarEvent, error) {
+	rows, err := s.db.Query("SELECT id, calendar_id, summary, description, start_time, end_time, attendees FROM calendar_events ORDER BY start_time")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []CalendarEvent
+	for rows.Next() {
+		var e CalendarEvent
+		if err := rows.Scan(&e.ID, &e.CalendarID, &e.Summary, &e.Description, &e.StartTime, &e.EndTime, &e.Attendees); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+func (s *Store) CreateCalendarEventFromForm(summary, description, start, end string) (*CalendarEvent, error) {
+	id := fmt.Sprintf("evt_%d", time.Now().UnixNano())
+
+	// Convert datetime-local format to ISO 8601
+	startTime := start + ":00Z"
+	endTime := end + ":00Z"
+
+	_, err := s.db.Exec(
+		"INSERT INTO calendar_events (id, calendar_id, summary, description, start_time, end_time, attendees) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, "primary", summary, description, startTime, endTime, "[]",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CalendarEvent{
+		ID:          id,
+		CalendarID:  "primary",
+		Summary:     summary,
+		Description: description,
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Attendees:   "[]",
+	}, nil
+}
+
+func (s *Store) DeleteCalendarEvent(id string) error {
+	_, err := s.db.Exec("DELETE FROM calendar_events WHERE id = ?", id)
+	return err
 }

@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900">New Event</h1>
+
+    <form hx-post="/admin/calendar" hx-target="#event-list" hx-swap="beforeend" class="bg-white rounded-lg shadow p-6 space-y-4 max-w-2xl">
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Summary</label>
+            <input type="text" name="summary" required class="mt-1 block w-full rounded border-gray-300 shadow-sm px-3 py-2 border">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <textarea name="description" rows="2" class="mt-1 block w-full rounded border-gray-300 shadow-sm px-3 py-2 border"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Start</label>
+                <input type="datetime-local" name="start" required class="mt-1 block w-full rounded border-gray-300 shadow-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">End</label>
+                <input type="datetime-local" name="end" required class="mt-1 block w-full rounded border-gray-300 shadow-sm px-3 py-2 border">
+            </div>
+        </div>
+        <div class="flex gap-4">
+            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Create</button>
+            <a href="/admin/calendar" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Cancel</a>
+        </div>
+    </form>
+</div>
+{{end}}

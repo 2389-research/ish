@@ -26,6 +26,10 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Get("/gmail/new", h.gmailForm)
 		r.Post("/gmail", h.gmailCreate)
 		r.Delete("/gmail/{id}", h.gmailDelete)
+		r.Get("/calendar", h.calendarList)
+		r.Get("/calendar/new", h.calendarForm)
+		r.Post("/calendar", h.calendarCreate)
+		r.Delete("/calendar/{id}", h.calendarDelete)
 	})
 }
 
@@ -97,4 +101,49 @@ func (h *Handlers) gmailCreate(w http.ResponseWriter, r *http.Request) {
 	// Return just the row for htmx to append
 	w.Header().Set("Content-Type", "text/html")
 	render(w, "gmail-row", msg)
+}
+
+func (h *Handlers) calendarList(w http.ResponseWriter, r *http.Request) {
+	events, err := h.store.ListAllCalendarEvents()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "layout", map[string]any{"Events": events})
+}
+
+func (h *Handlers) calendarForm(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "layout", nil)
+}
+
+func (h *Handlers) calendarCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	evt, err := h.store.CreateCalendarEventFromForm(
+		r.FormValue("summary"),
+		r.FormValue("description"),
+		r.FormValue("start"),
+		r.FormValue("end"),
+	)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "calendar-row", evt)
+}
+
+func (h *Handlers) calendarDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.store.DeleteCalendarEvent(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
