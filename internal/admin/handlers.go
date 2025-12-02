@@ -30,6 +30,10 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Get("/calendar/new", h.calendarForm)
 		r.Post("/calendar", h.calendarCreate)
 		r.Delete("/calendar/{id}", h.calendarDelete)
+		r.Get("/people", h.peopleList)
+		r.Get("/people/new", h.peopleForm)
+		r.Post("/people", h.peopleCreate)
+		r.Delete("/people/{id}", h.peopleDelete)
 	})
 }
 
@@ -142,6 +146,46 @@ func (h *Handlers) calendarCreate(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) calendarDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.store.DeleteCalendarEvent(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *Handlers) peopleList(w http.ResponseWriter, r *http.Request) {
+	people, err := h.store.ListAllPeople()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "layout", map[string]any{"People": people})
+}
+
+func (h *Handlers) peopleForm(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "layout", nil)
+}
+
+func (h *Handlers) peopleCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	p, err := h.store.CreatePersonFromForm("harper", r.FormValue("name"), r.FormValue("email"))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	render(w, "people-row", p)
+}
+
+func (h *Handlers) peopleDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.store.DeletePerson(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

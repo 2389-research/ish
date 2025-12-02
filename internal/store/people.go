@@ -6,8 +6,11 @@ package store
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type Person struct {
@@ -82,4 +85,74 @@ func (s *Store) GetPerson(userID, resourceName string) (*Person, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+type PersonView struct {
+	ID           string
+	ResourceName string
+	DisplayName  string
+	Email        string
+}
+
+func (s *Store) ListAllPeople() ([]PersonView, error) {
+	rows, err := s.db.Query("SELECT resource_name, data FROM people ORDER BY resource_name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var people []PersonView
+	for rows.Next() {
+		var p PersonView
+		var data string
+		if err := rows.Scan(&p.ResourceName, &data); err != nil {
+			return nil, err
+		}
+
+		// Extract ID from resource_name (people/c123 -> c123)
+		p.ID = strings.TrimPrefix(p.ResourceName, "people/")
+
+		// Parse data JSON
+		var d struct {
+			Names          []struct{ DisplayName string } `json:"names"`
+			EmailAddresses []struct{ Value string }       `json:"emailAddresses"`
+		}
+		json.Unmarshal([]byte(data), &d)
+		if len(d.Names) > 0 {
+			p.DisplayName = d.Names[0].DisplayName
+		}
+		if len(d.EmailAddresses) > 0 {
+			p.Email = d.EmailAddresses[0].Value
+		}
+		people = append(people, p)
+	}
+	return people, nil
+}
+
+func (s *Store) CreatePersonFromForm(userID, name, email string) (*PersonView, error) {
+	id := fmt.Sprintf("c%d", time.Now().UnixNano())
+	resourceName := "people/" + id
+
+	data := fmt.Sprintf(`{"names":[{"displayName":"%s"}],"emailAddresses":[{"value":"%s"}]}`, name, email)
+
+	_, err := s.db.Exec(
+		"INSERT INTO people (resource_name, user_id, data) VALUES (?, ?, ?)",
+		resourceName, userID, data,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PersonView{
+		ID:           id,
+		ResourceName: resourceName,
+		DisplayName:  name,
+		Email:        email,
+	}, nil
+}
+
+func (s *Store) DeletePerson(id string) error {
+	resourceName := "people/" + id
+	_, err := s.db.Exec("DELETE FROM people WHERE resource_name = ?", resourceName)
+	return err
 }
