@@ -1,7 +1,7 @@
 # ABOUTME: Makefile for ISH - fake Google API server.
 # ABOUTME: Provides targets for building, testing, and running the server.
 
-.PHONY: build test run seed reset clean help
+.PHONY: build test scenario run seed reset clean help
 
 # Default target
 all: build
@@ -13,6 +13,17 @@ build:
 # Run all tests
 test:
 	go test ./... -v
+
+# Run scenario tests (real server, real dependencies)
+scenario:
+	@if [ -d .scratch ]; then \
+		for f in .scratch/test_*.sh; do \
+			echo "Running $$f..."; \
+			bash "$$f" || exit 1; \
+		done; \
+	else \
+		echo "No .scratch directory found"; \
+	fi
 
 # Run tests with coverage
 cover:
@@ -70,7 +81,8 @@ help:
 	@echo ""
 	@echo "Usage:"
 	@echo "  make build      Build the binary"
-	@echo "  make test       Run all tests"
+	@echo "  make test       Run all unit/integration tests"
+	@echo "  make scenario   Run scenario tests (real server)"
 	@echo "  make cover      Run tests with coverage report"
 	@echo "  make run        Build and run the server on :9000"
 	@echo "  make seed       Seed the database with test data"
