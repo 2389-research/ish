@@ -27,6 +27,7 @@ func init() {
 		"templates/gmail/row.html",
 		"templates/calendar/row.html",
 		"templates/people/row.html",
+		"templates/tasks/row.html",
 	))
 
 	// Parse each page template with its own copy of layout
@@ -44,6 +45,10 @@ func init() {
 		"people-list":   "templates/people/list.html",
 		"people-form":   "templates/people/form.html",
 		"people-view":   "templates/people/view.html",
+		"tasks-list":    "templates/tasks/list.html",
+		"tasks-form":    "templates/tasks/form.html",
+		"tasks-view":    "templates/tasks/view.html",
+		"logs-list":     "templates/logs/list.html",
 	}
 
 	for name, path := range pages {
@@ -55,6 +60,7 @@ func init() {
 			"templates/gmail/row.html",
 			"templates/calendar/row.html",
 			"templates/people/row.html",
+			"templates/tasks/row.html",
 		))
 		pageTmpls[name] = tmpl
 	}

@@ -21,9 +21,24 @@ func NewHandlers(s *store.Store) *Handlers {
 }
 
 func (h *Handlers) RegisterRoutes(r chi.Router) {
+	// Standard Google Calendar API v3 routes
 	r.Route("/calendar/v3/calendars/{calendarId}", func(r chi.Router) {
 		r.Get("/events", h.listEvents)
+		r.Post("/events", h.createEvent)
 		r.Get("/events/{eventId}", h.getEvent)
+		r.Put("/events/{eventId}", h.updateEvent)
+		r.Patch("/events/{eventId}", h.updateEvent) // PATCH also calls updateEvent
+		r.Delete("/events/{eventId}", h.deleteEvent)
+	})
+
+	// Alias routes without /calendar/v3/ prefix (some clients strip this)
+	r.Route("/calendars/{calendarId}", func(r chi.Router) {
+		r.Get("/events", h.listEvents)
+		r.Post("/events", h.createEvent)
+		r.Get("/events/{eventId}", h.getEvent)
+		r.Put("/events/{eventId}", h.updateEvent)
+		r.Patch("/events/{eventId}", h.updateEvent)
+		r.Delete("/events/{eventId}", h.deleteEvent)
 	})
 }
 
@@ -178,4 +193,216 @@ func writeError(w http.ResponseWriter, code int, message, status string) {
 			"status":  status,
 		},
 	})
+}
+
+func (h *Handlers) createEvent(w http.ResponseWriter, r *http.Request) {
+	calendarID := chi.URLParam(r, "calendarId")
+
+	var req struct {
+		Summary     string `json:"summary"`
+		Description string `json:"description"`
+		Location    string `json:"location"`
+		Start       struct {
+			DateTime string `json:"dateTime"`
+			Date     string `json:"date"`
+		} `json:"start"`
+		End struct {
+			DateTime string `json:"dateTime"`
+			Date     string `json:"date"`
+		} `json:"end"`
+		Attendees []struct {
+			Email string `json:"email"`
+		} `json:"attendees"`
+		Recurrence []string `json:"recurrence"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "Invalid request body", "INVALID_REQUEST")
+		return
+	}
+
+	// Get start/end times (prefer dateTime over date)
+	startTime := req.Start.DateTime
+	if startTime == "" {
+		startTime = req.Start.Date
+	}
+	endTime := req.End.DateTime
+	if endTime == "" {
+		endTime = req.End.Date
+	}
+
+	if req.Summary == "" || startTime == "" || endTime == "" {
+		writeError(w, 400, "Missing required fields: summary, start, end", "INVALID_REQUEST")
+		return
+	}
+
+	// Convert attendees to JSON
+	attendeesJSON, _ := json.Marshal(req.Attendees)
+
+	// Convert recurrence to JSON
+	recurrenceJSON := ""
+	if len(req.Recurrence) > 0 {
+		bytes, _ := json.Marshal(req.Recurrence)
+		recurrenceJSON = string(bytes)
+	}
+
+	event, err := h.store.CreateCalendarEvent(&store.CalendarEvent{
+		CalendarID:  calendarID,
+		Summary:     req.Summary,
+		Description: req.Description,
+		Location:    req.Location,
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Attendees:   string(attendeesJSON),
+		Recurrence:  recurrenceJSON,
+	})
+	if err != nil {
+		writeError(w, 500, "Failed to create event", "INTERNAL")
+		return
+	}
+
+	// Parse attendees back to array
+	var attendees []any
+	json.Unmarshal([]byte(event.Attendees), &attendees)
+
+	resp := map[string]any{
+		"kind":        "calendar#event",
+		"id":          event.ID,
+		"summary":     event.Summary,
+		"description": event.Description,
+		"location":    event.Location,
+		"start":       map[string]string{"dateTime": event.StartTime},
+		"end":         map[string]string{"dateTime": event.EndTime},
+		"attendees":   attendees,
+		"status":      "confirmed",
+		"htmlLink":    "https://calendar.google.com/calendar/event?eid=" + event.ID,
+		"created":     event.UpdatedAt,
+		"updated":     event.UpdatedAt,
+	}
+
+	if event.Recurrence != "" {
+		var recurrence []string
+		json.Unmarshal([]byte(event.Recurrence), &recurrence)
+		if len(recurrence) > 0 {
+			resp["recurrence"] = recurrence
+		}
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, resp)
+}
+
+func (h *Handlers) updateEvent(w http.ResponseWriter, r *http.Request) {
+	calendarID := chi.URLParam(r, "calendarId")
+	eventID := chi.URLParam(r, "eventId")
+
+	// First get the existing event
+	existing, err := h.store.GetCalendarEvent(calendarID, eventID)
+	if err != nil {
+		writeError(w, 404, "Event not found", "NOT_FOUND")
+		return
+	}
+
+	var req struct {
+		Summary     *string `json:"summary"`
+		Description *string `json:"description"`
+		Location    *string `json:"location"`
+		Start       *struct {
+			DateTime string `json:"dateTime"`
+			Date     string `json:"date"`
+		} `json:"start"`
+		End *struct {
+			DateTime string `json:"dateTime"`
+			Date     string `json:"date"`
+		} `json:"end"`
+		Attendees *[]struct {
+			Email string `json:"email"`
+		} `json:"attendees"`
+		Recurrence *[]string `json:"recurrence"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "Invalid request body", "INVALID_REQUEST")
+		return
+	}
+
+	// Update fields if provided
+	if req.Summary != nil {
+		existing.Summary = *req.Summary
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.Location != nil {
+		existing.Location = *req.Location
+	}
+	if req.Start != nil {
+		if req.Start.DateTime != "" {
+			existing.StartTime = req.Start.DateTime
+		} else if req.Start.Date != "" {
+			existing.StartTime = req.Start.Date
+		}
+	}
+	if req.End != nil {
+		if req.End.DateTime != "" {
+			existing.EndTime = req.End.DateTime
+		} else if req.End.Date != "" {
+			existing.EndTime = req.End.Date
+		}
+	}
+	if req.Attendees != nil {
+		bytes, _ := json.Marshal(*req.Attendees)
+		existing.Attendees = string(bytes)
+	}
+	if req.Recurrence != nil {
+		bytes, _ := json.Marshal(*req.Recurrence)
+		existing.Recurrence = string(bytes)
+	}
+
+	updated, err := h.store.UpdateCalendarEvent(existing)
+	if err != nil {
+		writeError(w, 500, "Failed to update event", "INTERNAL")
+		return
+	}
+
+	// Parse attendees back to array
+	var attendees []any
+	json.Unmarshal([]byte(updated.Attendees), &attendees)
+
+	resp := map[string]any{
+		"kind":        "calendar#event",
+		"id":          updated.ID,
+		"summary":     updated.Summary,
+		"description": updated.Description,
+		"location":    updated.Location,
+		"start":       map[string]string{"dateTime": updated.StartTime},
+		"end":         map[string]string{"dateTime": updated.EndTime},
+		"attendees":   attendees,
+		"status":      "confirmed",
+		"htmlLink":    "https://calendar.google.com/calendar/event?eid=" + updated.ID,
+		"updated":     updated.UpdatedAt,
+	}
+
+	if updated.Recurrence != "" {
+		var recurrence []string
+		json.Unmarshal([]byte(updated.Recurrence), &recurrence)
+		if len(recurrence) > 0 {
+			resp["recurrence"] = recurrence
+		}
+	}
+
+	writeJSON(w, resp)
+}
+
+func (h *Handlers) deleteEvent(w http.ResponseWriter, r *http.Request) {
+	calendarID := chi.URLParam(r, "calendarId")
+	eventID := chi.URLParam(r, "eventId")
+
+	err := h.store.DeleteCalendarEvent(calendarID, eventID)
+	if err != nil {
+		writeError(w, 404, "Event not found", "NOT_FOUND")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

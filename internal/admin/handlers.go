@@ -47,6 +47,13 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Post("/people", h.peopleCreate)
 		r.Post("/people/generate", h.peopleGenerate)
 		r.Delete("/people/{id}", h.peopleDelete)
+		r.Get("/tasks", h.tasksList)
+		r.Get("/tasks/new", h.tasksForm)
+		r.Get("/tasks/{id}", h.tasksView)
+		r.Post("/tasks", h.tasksCreate)
+		r.Post("/tasks/generate", h.tasksGenerate)
+		r.Delete("/tasks/{id}", h.tasksDelete)
+		r.Get("/logs", h.logsList)
 	})
 }
 
@@ -63,6 +70,8 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
 		"ThreadCount":  counts.Threads,
 		"EventCount":   counts.Events,
 		"PeopleCount":  counts.People,
+		"Tasks":        counts.Tasks,
+		"Requests":     counts.Requests,
 	})
 }
 
@@ -189,7 +198,7 @@ func (h *Handlers) calendarView(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) calendarDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.store.DeleteCalendarEvent(id); err != nil {
+	if err := h.store.DeleteCalendarEvent("primary", id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -325,7 +334,8 @@ func (h *Handlers) calendarGenerate(w http.ResponseWriter, r *http.Request) {
 		Attendees:   string(attendeesJSON),
 	}
 
-	if err := h.store.CreateCalendarEvent(evt); err != nil {
+	evt, err = h.store.CreateCalendarEvent(evt)
+	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -383,4 +393,163 @@ func (h *Handlers) peopleGenerate(w http.ResponseWriter, r *http.Request) {
 		DisplayName:  contact.Name,
 		Email:        contact.Email,
 	})
+}
+
+func (h *Handlers) tasksList(w http.ResponseWriter, r *http.Request) {
+	tasks, err := h.store.ListAllTasks()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	renderPage(w, "tasks-list", map[string]any{"Tasks": tasks})
+}
+
+func (h *Handlers) tasksForm(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	renderPage(w, "tasks-form", nil)
+}
+
+func (h *Handlers) tasksCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	task, err := h.store.CreateTaskFromForm(
+		r.FormValue("title"),
+		r.FormValue("notes"),
+		r.FormValue("due"),
+		r.FormValue("status"),
+	)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	renderPartial(w, "tasks-row", task)
+}
+
+func (h *Handlers) tasksView(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	task, err := h.store.GetTask("@default", id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	renderPage(w, "tasks-view", task)
+}
+
+func (h *Handlers) tasksDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.store.DeleteTask("@default", id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *Handlers) tasksGenerate(w http.ResponseWriter, r *http.Request) {
+	// Generate a task using static data (no AI generation for now)
+	titles := []string{
+		"Review project proposal",
+		"Prepare quarterly report",
+		"Schedule team meeting",
+		"Update documentation",
+		"Fix production bug",
+		"Refactor authentication logic",
+		"Write unit tests",
+		"Deploy to staging environment",
+	}
+	notes := []string{
+		"High priority - needs review by end of week",
+		"Include metrics from last quarter",
+		"Discuss upcoming sprint planning",
+		"Update API documentation with new endpoints",
+		"User reported login issues",
+		"Improve code maintainability",
+		"Increase test coverage to 80%",
+		"Test all new features before production deploy",
+	}
+
+	idx := int(time.Now().UnixNano()) % len(titles)
+
+	task, err := h.store.CreateTaskFromForm(
+		titles[idx],
+		notes[idx],
+		time.Now().Add(7*24*time.Hour).Format(time.RFC3339),
+		"needsAction",
+	)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	renderPartial(w, "tasks-row", task)
+}
+
+func (h *Handlers) logsList(w http.ResponseWriter, r *http.Request) {
+	// Get filter parameters
+	method := r.URL.Query().Get("method")
+	pathPrefix := r.URL.Query().Get("path")
+	statusCode := 0
+	if sc := r.URL.Query().Get("status"); sc != "" {
+		fmt.Sscanf(sc, "%d", &statusCode)
+	}
+
+	logs, err := h.store.GetRequestLogs(&store.RequestLogQuery{
+		Limit:      100,
+		Offset:     0,
+		Method:     method,
+		PathPrefix: pathPrefix,
+		StatusCode: statusCode,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	// Pretty-print JSON in request/response bodies
+	for _, log := range logs {
+		log.RequestBody = prettyJSON(log.RequestBody)
+		log.ResponseBody = prettyJSON(log.ResponseBody)
+	}
+
+	stats, err := h.store.GetRequestLogStats()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	topEndpoints, err := h.store.GetTopEndpoints(10)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	renderPage(w, "logs-list", map[string]any{
+		"Logs":         logs,
+		"Stats":        stats,
+		"TopEndpoints": topEndpoints,
+	})
+}
+
+// prettyJSON formats JSON with indentation, or returns original string if not valid JSON
+func prettyJSON(s string) string {
+	if s == "" {
+		return s
+	}
+	var obj any
+	if err := json.Unmarshal([]byte(s), &obj); err != nil {
+		return s // Not valid JSON, return as-is
+	}
+	formatted, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return s
+	}
+	return string(formatted)
 }

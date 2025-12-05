@@ -25,6 +25,7 @@ func NewHandlers(s *store.Store) *Handlers {
 func (h *Handlers) RegisterRoutes(r chi.Router) {
 	r.Get("/v1/people/me/connections", h.listConnections)
 	r.Get("/v1/people/{resourceId}", h.getPerson)
+	r.Get("/v1/people:searchContacts", h.searchContacts) // Alias without /people/v1/ prefix
 	r.Get("/people/v1/people:searchContacts", h.searchContacts)
 	r.Get("/people/v1/people/{resourceId}", h.getPerson)
 }

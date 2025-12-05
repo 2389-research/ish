@@ -40,12 +40,24 @@ func (s *Store) CreateCalendar(c *Calendar) error {
 	return err
 }
 
-func (s *Store) CreateCalendarEvent(e *CalendarEvent) error {
+func (s *Store) CreateCalendarEvent(e *CalendarEvent) (*CalendarEvent, error) {
+	// Generate ID if not provided
+	if e.ID == "" {
+		e.ID = fmt.Sprintf("evt_%d", time.Now().UnixNano())
+	}
+
+	// Set updated_at timestamp
+	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
 	_, err := s.db.Exec(
-		"INSERT INTO calendar_events (id, calendar_id, summary, description, start_time, end_time, attendees) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		e.ID, e.CalendarID, e.Summary, e.Description, e.StartTime, e.EndTime, e.Attendees,
+		`INSERT INTO calendar_events (id, calendar_id, summary, description, start_time, end_time, attendees, location, recurrence, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.CalendarID, e.Summary, e.Description, e.StartTime, e.EndTime, e.Attendees, e.Location, e.Recurrence, e.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 func (s *Store) ListCalendarEvents(calendarID string, maxResults int, pageToken string, timeMin string, timeMax string) ([]CalendarEvent, string, error) {
@@ -165,8 +177,27 @@ func (s *Store) CreateCalendarEventFromForm(summary, description, start, end str
 	}, nil
 }
 
-func (s *Store) DeleteCalendarEvent(id string) error {
-	_, err := s.db.Exec("DELETE FROM calendar_events WHERE id = ?", id)
+// UpdateCalendarEvent updates an existing calendar event
+func (s *Store) UpdateCalendarEvent(e *CalendarEvent) (*CalendarEvent, error) {
+	// Update timestamp
+	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	_, err := s.db.Exec(
+		`UPDATE calendar_events SET summary = ?, description = ?, start_time = ?, end_time = ?,
+		 attendees = ?, location = ?, recurrence = ?, updated_at = ?
+		 WHERE calendar_id = ? AND id = ?`,
+		e.Summary, e.Description, e.StartTime, e.EndTime, e.Attendees, e.Location, e.Recurrence, e.UpdatedAt,
+		e.CalendarID, e.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// DeleteCalendarEvent deletes a calendar event
+func (s *Store) DeleteCalendarEvent(calendarID, eventID string) error {
+	_, err := s.db.Exec("DELETE FROM calendar_events WHERE calendar_id = ? AND id = ?", calendarID, eventID)
 	return err
 }
 

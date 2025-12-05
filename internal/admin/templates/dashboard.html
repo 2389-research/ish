@@ -2,7 +2,7 @@
 <div class="space-y-6">
     <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <a href="/admin/gmail" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition">
             <h2 class="text-lg font-semibold text-gray-700">Gmail</h2>
             <p class="text-3xl font-bold text-blue-600">{{.MessageCount}}</p>
@@ -19,6 +19,20 @@
             <h2 class="text-lg font-semibold text-gray-700">People</h2>
             <p class="text-3xl font-bold text-purple-600">{{.PeopleCount}}</p>
             <p class="text-sm text-gray-500">contacts</p>
+        </a>
+
+        <a href="/admin/tasks" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition">
+            <h2 class="text-lg font-semibold text-gray-700">Tasks</h2>
+            <p class="text-3xl font-bold text-orange-600">{{.Tasks}}</p>
+            <p class="text-sm text-gray-500">tasks</p>
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <a href="/admin/logs" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition">
+            <h2 class="text-lg font-semibold text-gray-700">Request Logs</h2>
+            <p class="text-3xl font-bold text-cyan-600">{{.Requests}}</p>
+            <p class="text-sm text-gray-500">API requests</p>
         </a>
     </div>
 </div>

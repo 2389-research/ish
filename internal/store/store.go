@@ -109,6 +109,43 @@ func (s *Store) migrate() error {
 		token TEXT NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS task_lists (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id),
+		title TEXT NOT NULL,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS tasks (
+		id TEXT PRIMARY KEY,
+		list_id TEXT NOT NULL REFERENCES task_lists(id),
+		title TEXT NOT NULL,
+		notes TEXT,
+		due TEXT,
+		status TEXT DEFAULT 'needsAction',
+		completed TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS request_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		method TEXT NOT NULL,
+		path TEXT NOT NULL,
+		status_code INTEGER,
+		duration_ms INTEGER,
+		user_id TEXT,
+		ip_address TEXT,
+		user_agent TEXT,
+		request_body TEXT,
+		response_body TEXT,
+		error TEXT
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp ON request_logs(timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_request_logs_path ON request_logs(path);
+	CREATE INDEX IF NOT EXISTS idx_request_logs_status ON request_logs(status_code);
 	`
 	_, err := s.db.Exec(schema)
 	if err != nil {
@@ -126,6 +163,8 @@ func (s *Store) migrate() error {
 		"ALTER TABLE calendar_events ADD COLUMN recurrence TEXT",
 		"ALTER TABLE calendar_events ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 		"ALTER TABLE people ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+		"ALTER TABLE request_logs ADD COLUMN request_body TEXT",
+		"ALTER TABLE request_logs ADD COLUMN response_body TEXT",
 	}
 	for _, m := range migrations {
 		s.db.Exec(m) // Ignore errors for already existing columns
@@ -150,6 +189,8 @@ type Counts struct {
 	Threads  int
 	Events   int
 	People   int
+	Tasks    int
+	Requests int
 }
 
 func (s *Store) GetCounts() (*Counts, error) {
@@ -158,5 +199,7 @@ func (s *Store) GetCounts() (*Counts, error) {
 	s.db.QueryRow("SELECT COUNT(*) FROM gmail_threads").Scan(&c.Threads)
 	s.db.QueryRow("SELECT COUNT(*) FROM calendar_events").Scan(&c.Events)
 	s.db.QueryRow("SELECT COUNT(*) FROM people").Scan(&c.People)
+	s.db.QueryRow("SELECT COUNT(*) FROM tasks").Scan(&c.Tasks)
+	s.db.QueryRow("SELECT COUNT(*) FROM request_logs").Scan(&c.Requests)
 	return &c, nil
 }

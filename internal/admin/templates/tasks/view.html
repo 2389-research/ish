@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-900">Task Details</h1>
+        <a href="/admin/tasks" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Back</a>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6 space-y-4 max-w-2xl">
+        <div>
+            <label class="text-sm font-medium text-gray-500">ID</label>
+            <p class="text-gray-900 font-mono">{{.ID}}</p>
+        </div>
+        <div>
+            <label class="text-sm font-medium text-gray-500">List ID</label>
+            <p class="text-gray-900 font-mono">{{.ListID}}</p>
+        </div>
+        <div>
+            <label class="text-sm font-medium text-gray-500">Title</label>
+            <p class="text-gray-900">{{.Title}}</p>
+        </div>
+        {{if .Notes}}
+        <div>
+            <label class="text-sm font-medium text-gray-500">Notes</label>
+            <p class="text-gray-900 whitespace-pre-wrap">{{.Notes}}</p>
+        </div>
+        {{end}}
+        <div>
+            <label class="text-sm font-medium text-gray-500">Status</label>
+            <p>
+                {{if eq .Status "completed"}}
+                <span class="inline-flex items-center px-2 py-1 rounded text-sm font-medium bg-green-100 text-green-800">Completed</span>
+                {{else}}
+                <span class="inline-flex items-center px-2 py-1 rounded text-sm font-medium bg-yellow-100 text-yellow-800">Needs Action</span>
+                {{end}}
+            </p>
+        </div>
+        {{if .Due}}
+        <div>
+            <label class="text-sm font-medium text-gray-500">Due Date</label>
+            <p class="text-gray-900">{{.Due}}</p>
+        </div>
+        {{end}}
+        {{if .Completed}}
+        <div>
+            <label class="text-sm font-medium text-gray-500">Completed Date</label>
+            <p class="text-gray-900">{{.Completed}}</p>
+        </div>
+        {{end}}
+        <div>
+            <label class="text-sm font-medium text-gray-500">Updated</label>
+            <p class="text-gray-900">{{.UpdatedAt}}</p>
+        </div>
+    </div>
+</div>
+{{end}}

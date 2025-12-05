@@ -20,9 +20,11 @@ import (
 	"github.com/2389/ish/internal/auth"
 	"github.com/2389/ish/internal/calendar"
 	"github.com/2389/ish/internal/gmail"
+	"github.com/2389/ish/internal/logging"
 	"github.com/2389/ish/internal/people"
 	"github.com/2389/ish/internal/seed"
 	"github.com/2389/ish/internal/store"
+	"github.com/2389/ish/internal/tasks"
 )
 
 var (
@@ -86,6 +88,7 @@ func newServer(dbPath string) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(logging.Middleware(s))
 	r.Use(auth.Middleware)
 
 	// Health check
@@ -94,10 +97,16 @@ func newServer(dbPath string) (http.Handler, error) {
 		json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
 
+	// Favicon
+	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// API handlers
 	gmail.NewHandlers(s).RegisterRoutes(r)
 	calendar.NewHandlers(s).RegisterRoutes(r)
 	people.NewHandlers(s).RegisterRoutes(r)
+	tasks.NewHandlers(s).RegisterRoutes(r)
 	admin.NewHandlers(s).RegisterRoutes(r)
 
 	return r, nil
@@ -232,6 +241,50 @@ func seedData(s *store.Store) error {
 		})
 	}
 	log.Printf("Created %d People contacts", len(data.Contacts))
+
+	// Create default task list
+	s.CreateTaskList(&store.TaskList{
+		ID:     "@default",
+		UserID: userID,
+		Title:  "My Tasks",
+	})
+	log.Println("Created default task list")
+
+	// Create sample tasks
+	taskData := []struct {
+		title  string
+		notes  string
+		due    string
+		status string
+	}{
+		{"Review project proposal", "High priority - needs review by end of week", time.Now().Add(3 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Prepare quarterly report", "Include metrics from last quarter", time.Now().Add(7 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Schedule team meeting", "Discuss upcoming sprint planning", time.Now().Add(2 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Update documentation", "Update API documentation with new endpoints", time.Now().Add(5 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Fix production bug", "User reported login issues", time.Now().Add(1 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Refactor authentication logic", "Improve code maintainability", time.Now().Add(10 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Write unit tests", "Increase test coverage to 80%", time.Now().Add(14 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Deploy to staging environment", "Test all new features before production deploy", time.Now().Add(4 * 24 * time.Hour).Format(time.RFC3339), "needsAction"},
+		{"Review pull requests", "Check pending PRs from team", time.Now().Add(-1 * 24 * time.Hour).Format(time.RFC3339), "completed"},
+		{"Set up CI/CD pipeline", "Automated testing and deployment", time.Now().Add(-3 * 24 * time.Hour).Format(time.RFC3339), "completed"},
+	}
+
+	for i, td := range taskData {
+		task := &store.Task{
+			ID:      fmt.Sprintf("task_%d", i+1),
+			ListID:  "@default",
+			Title:   td.title,
+			Notes:   td.notes,
+			Due:     td.due,
+			Status:  td.status,
+			UpdatedAt: time.Now().Add(-time.Duration(len(taskData)-i) * time.Hour).Format(time.RFC3339),
+		}
+		if td.status == "completed" {
+			task.Completed = time.Now().Add(-time.Duration(i) * 24 * time.Hour).Format(time.RFC3339)
+		}
+		s.CreateTask(task)
+	}
+	log.Printf("Created %d tasks", len(taskData))
 
 	log.Println("Seed complete!")
 	return nil

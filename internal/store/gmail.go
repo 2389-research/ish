@@ -330,6 +330,53 @@ func (s *Store) CreateGmailMessageFromForm(userID, from, subject, body string, l
 	}, nil
 }
 
+// SendGmailMessage creates a sent message and returns it
+func (s *Store) SendGmailMessage(userID, from, to, subject, body string) (*GmailMessage, error) {
+	id := fmt.Sprintf("msg_%d", time.Now().UnixNano())
+	threadID := fmt.Sprintf("thr_%d", time.Now().UnixNano())
+
+	snippet := truncate(body, 100)
+
+	// Create thread first
+	s.db.Exec("INSERT INTO gmail_threads (id, user_id, snippet) VALUES (?, ?, ?)",
+		threadID, userID, snippet)
+
+	// Build payload with all headers
+	payloadData := map[string]any{
+		"headers": []map[string]string{
+			{"name": "From", "value": from},
+			{"name": "To", "value": to},
+			{"name": "Subject", "value": subject},
+		},
+		"body": map[string]string{
+			"data": base64.URLEncoding.EncodeToString([]byte(body)),
+		},
+	}
+	payloadBytes, _ := json.Marshal(payloadData)
+
+	// Messages that are sent get the SENT label
+	labels := []string{"SENT"}
+	labelJSON, _ := json.Marshal(labels)
+
+	_, err := s.db.Exec(
+		"INSERT INTO gmail_messages (id, user_id, thread_id, label_ids, snippet, internal_date, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, userID, threadID, string(labelJSON), snippet, time.Now().UnixMilli(), string(payloadBytes),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GmailMessage{
+		ID:           id,
+		UserID:       userID,
+		ThreadID:     threadID,
+		LabelIDs:     labels,
+		Snippet:      snippet,
+		InternalDate: time.Now().UnixMilli(),
+		Payload:      string(payloadBytes),
+	}, nil
+}
+
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
