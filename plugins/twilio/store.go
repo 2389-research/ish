@@ -4,11 +4,23 @@
 package twilio
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"time"
 )
 
 type TwilioStore struct {
 	db *sql.DB
+}
+
+type Account struct {
+	AccountSid   string
+	AuthToken    string
+	FriendlyName string
+	Status       string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 func NewTwilioStore(db *sql.DB) (*TwilioStore, error) {
@@ -115,4 +127,88 @@ func (s *TwilioStore) initTables() error {
 		}
 	}
 	return nil
+}
+
+func generateAuthToken() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func (s *TwilioStore) GetOrCreateAccount(accountSid string) (*Account, error) {
+	// Try to get existing account
+	var account Account
+	var friendlyName sql.NullString
+	err := s.db.QueryRow(`
+		SELECT account_sid, auth_token, friendly_name, status, created_at, updated_at
+		FROM twilio_accounts
+		WHERE account_sid = ?
+	`, accountSid).Scan(
+		&account.AccountSid,
+		&account.AuthToken,
+		&friendlyName,
+		&account.Status,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+	)
+
+	if err == nil {
+		if friendlyName.Valid {
+			account.FriendlyName = friendlyName.String
+		}
+		return &account, nil
+	}
+
+	// Account doesn't exist, create it
+	authToken, err := generateAuthToken()
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.db.Exec(`
+		INSERT INTO twilio_accounts (account_sid, auth_token)
+		VALUES (?, ?)
+	`, accountSid, authToken)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch the newly created account
+	err = s.db.QueryRow(`
+		SELECT account_sid, auth_token, friendly_name, status, created_at, updated_at
+		FROM twilio_accounts
+		WHERE account_sid = ?
+	`, accountSid).Scan(
+		&account.AccountSid,
+		&account.AuthToken,
+		&friendlyName,
+		&account.Status,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if friendlyName.Valid {
+		account.FriendlyName = friendlyName.String
+	}
+
+	return &account, nil
+}
+
+func (s *TwilioStore) ValidateAccount(accountSid, authToken string) bool {
+	var storedToken string
+	err := s.db.QueryRow(`
+		SELECT auth_token FROM twilio_accounts
+		WHERE account_sid = ? AND status = 'active'
+	`, accountSid).Scan(&storedToken)
+
+	if err != nil {
+		return false
+	}
+
+	return storedToken == authToken
 }
