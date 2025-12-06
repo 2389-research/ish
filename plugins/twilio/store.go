@@ -596,3 +596,75 @@ func (s *TwilioStore) ListPhoneNumbers(accountSid string) ([]PhoneNumber, error)
 
 	return numbers, nil
 }
+
+type WebhookQueueItem struct {
+	ID          int
+	ResourceSid string
+	WebhookURL  string
+	Payload     string
+	ScheduledAt time.Time
+	DeliveredAt *time.Time
+	Status      string
+	Attempts    int
+	CreatedAt   time.Time
+}
+
+func (s *TwilioStore) QueueWebhook(resourceSid, webhookURL, payload string, scheduledAt time.Time) error {
+	_, err := s.db.Exec(`
+		INSERT INTO twilio_webhook_queue (resource_sid, webhook_url, payload, scheduled_at)
+		VALUES (?, ?, ?, ?)
+	`, resourceSid, webhookURL, payload, scheduledAt)
+	return err
+}
+
+func (s *TwilioStore) GetPendingWebhooks(now time.Time) ([]WebhookQueueItem, error) {
+	rows, err := s.db.Query(`
+		SELECT id, resource_sid, webhook_url, payload, scheduled_at, delivered_at, status, attempts, created_at
+		FROM twilio_webhook_queue
+		WHERE status = 'pending' AND scheduled_at <= ? AND attempts < 3
+		ORDER BY scheduled_at ASC
+		LIMIT 100
+	`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []WebhookQueueItem
+	for rows.Next() {
+		var w WebhookQueueItem
+		var deliveredAt sql.NullTime
+
+		err := rows.Scan(&w.ID, &w.ResourceSid, &w.WebhookURL, &w.Payload,
+			&w.ScheduledAt, &deliveredAt, &w.Status, &w.Attempts, &w.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		if deliveredAt.Valid {
+			w.DeliveredAt = &deliveredAt.Time
+		}
+
+		webhooks = append(webhooks, w)
+	}
+
+	return webhooks, nil
+}
+
+func (s *TwilioStore) MarkWebhookDelivered(id int) error {
+	_, err := s.db.Exec(`
+		UPDATE twilio_webhook_queue
+		SET status = 'delivered', delivered_at = ?
+		WHERE id = ?
+	`, time.Now(), id)
+	return err
+}
+
+func (s *TwilioStore) MarkWebhookFailed(id int) error {
+	_, err := s.db.Exec(`
+		UPDATE twilio_webhook_queue
+		SET status = 'failed', attempts = attempts + 1
+		WHERE id = ?
+	`, id)
+	return err
+}

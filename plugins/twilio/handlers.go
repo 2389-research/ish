@@ -35,6 +35,12 @@ func (p *TwilioPlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Queue immediate webhook for "queued" status
+	p.QueueMessageWebhook(message.Sid, "queued", 0)
+
+	// Start async lifecycle simulation
+	go p.SimulateMessageLifecycle(message.Sid)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(messageToResponse(message))
@@ -141,6 +147,12 @@ func (p *TwilioPlugin) initiateCall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, 20005, "Internal server error")
 		return
 	}
+
+	// Queue immediate webhook for "initiated" status
+	p.QueueCallWebhook(call.Sid, "initiated", 0)
+
+	// Start async lifecycle simulation
+	go p.SimulateCallLifecycle(call.Sid)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

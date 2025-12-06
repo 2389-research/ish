@@ -123,5 +123,9 @@ func (p *TwilioPlugin) SetDB(db *sql.DB) error {
 		return err
 	}
 	p.store = store
+
+	// Start webhook worker
+	go p.StartWebhookWorker(context.Background())
+
 	return nil
 }
