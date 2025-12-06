@@ -57,6 +57,9 @@ func Middleware(s *store.Store) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Determine plugin
+			pluginName := GetPluginFromPath(r.URL.Path)
+
 			// Capture request body (if present)
 			var requestBody string
 			if r.Body != nil {
@@ -91,6 +94,7 @@ func Middleware(s *store.Store) func(http.Handler) http.Handler {
 
 			// Log to database (fire and forget)
 			go s.LogRequest(&store.RequestLog{
+				PluginName:   pluginName,
 				Method:       r.Method,
 				Path:         r.URL.Path,
 				StatusCode:   wrapped.statusCode,

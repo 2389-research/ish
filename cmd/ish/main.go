@@ -18,13 +18,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/2389/ish/internal/admin"
 	"github.com/2389/ish/internal/auth"
-	"github.com/2389/ish/internal/calendar"
-	"github.com/2389/ish/internal/gmail"
 	"github.com/2389/ish/internal/logging"
-	"github.com/2389/ish/internal/people"
 	"github.com/2389/ish/internal/seed"
 	"github.com/2389/ish/internal/store"
-	"github.com/2389/ish/internal/tasks"
+	"github.com/2389/ish/plugins/core"
+	_ "github.com/2389/ish/plugins/google" // Register Google plugin
 )
 
 var (
@@ -102,11 +100,20 @@ func newServer(dbPath string) (http.Handler, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// API handlers
-	gmail.NewHandlers(s).RegisterRoutes(r)
-	calendar.NewHandlers(s).RegisterRoutes(r)
-	people.NewHandlers(s).RegisterRoutes(r)
-	tasks.NewHandlers(s).RegisterRoutes(r)
+	// Initialize all plugins with store
+	for _, plugin := range core.All() {
+		// Set store for plugins that need it
+		type storePlugin interface {
+			SetStore(*store.Store)
+		}
+		if sp, ok := plugin.(storePlugin); ok {
+			sp.SetStore(s)
+		}
+		plugin.RegisterAuth(r)
+		plugin.RegisterRoutes(r)
+	}
+
+	// Admin UI
 	admin.NewHandlers(s).RegisterRoutes(r)
 
 	return r, nil
