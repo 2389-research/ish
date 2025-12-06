@@ -146,14 +146,21 @@ func (s *DiscordStore) GetWebhook(id, token string) (*Webhook, error) {
 		FROM discord_webhooks WHERE id = ? AND token = ? AND deleted_at IS NULL`
 
 	webhook := &Webhook{}
+	var avatar, applicationID sql.NullString
 	var deletedAt sql.NullTime
 	err := s.db.QueryRow(query, id, token).Scan(
-		&webhook.ID, &webhook.Token, &webhook.Type, &webhook.Name, &webhook.Avatar,
-		&webhook.ChannelID, &webhook.GuildID, &webhook.ApplicationID,
+		&webhook.ID, &webhook.Token, &webhook.Type, &webhook.Name, &avatar,
+		&webhook.ChannelID, &webhook.GuildID, &applicationID,
 		&webhook.CreatedAt, &webhook.UpdatedAt, &deletedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if avatar.Valid {
+		webhook.Avatar = avatar.String
+	}
+	if applicationID.Valid {
+		webhook.ApplicationID = applicationID.String
 	}
 	if deletedAt.Valid {
 		webhook.DeletedAt = &deletedAt.Time
@@ -198,14 +205,40 @@ func (s *DiscordStore) GetMessage(webhookID, messageID string) (*WebhookMessage,
 		FROM discord_webhook_messages WHERE webhook_id = ? AND id = ? AND deleted_at IS NULL`
 
 	msg := &WebhookMessage{}
+	var content, username, avatarURL, embeds, components, attachments, threadID sql.NullString
+	var flags sql.NullInt64
 	var editedAt, deletedAt sql.NullTime
 	err := s.db.QueryRow(query, webhookID, messageID).Scan(
-		&msg.ID, &msg.WebhookID, &msg.Content, &msg.Username, &msg.AvatarURL,
-		&msg.Embeds, &msg.Components, &msg.Attachments, &msg.ThreadID, &msg.Flags,
+		&msg.ID, &msg.WebhookID, &content, &username, &avatarURL,
+		&embeds, &components, &attachments, &threadID, &flags,
 		&msg.CreatedAt, &msg.UpdatedAt, &editedAt, &deletedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if content.Valid {
+		msg.Content = content.String
+	}
+	if username.Valid {
+		msg.Username = username.String
+	}
+	if avatarURL.Valid {
+		msg.AvatarURL = avatarURL.String
+	}
+	if embeds.Valid {
+		msg.Embeds = embeds.String
+	}
+	if components.Valid {
+		msg.Components = components.String
+	}
+	if attachments.Valid {
+		msg.Attachments = attachments.String
+	}
+	if threadID.Valid {
+		msg.ThreadID = threadID.String
+	}
+	if flags.Valid {
+		msg.Flags = int(flags.Int64)
 	}
 	if editedAt.Valid {
 		msg.EditedAt = &editedAt.Time
@@ -252,14 +285,40 @@ func (s *DiscordStore) ListMessages(webhookID string, limit int) ([]*WebhookMess
 	var messages []*WebhookMessage
 	for rows.Next() {
 		msg := &WebhookMessage{}
+		var content, username, avatarURL, embeds, components, attachments, threadID sql.NullString
+		var flags sql.NullInt64
 		var editedAt, deletedAt sql.NullTime
 		err := rows.Scan(
-			&msg.ID, &msg.WebhookID, &msg.Content, &msg.Username, &msg.AvatarURL,
-			&msg.Embeds, &msg.Components, &msg.Attachments, &msg.ThreadID, &msg.Flags,
+			&msg.ID, &msg.WebhookID, &content, &username, &avatarURL,
+			&embeds, &components, &attachments, &threadID, &flags,
 			&msg.CreatedAt, &msg.UpdatedAt, &editedAt, &deletedAt,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if content.Valid {
+			msg.Content = content.String
+		}
+		if username.Valid {
+			msg.Username = username.String
+		}
+		if avatarURL.Valid {
+			msg.AvatarURL = avatarURL.String
+		}
+		if embeds.Valid {
+			msg.Embeds = embeds.String
+		}
+		if components.Valid {
+			msg.Components = components.String
+		}
+		if attachments.Valid {
+			msg.Attachments = attachments.String
+		}
+		if threadID.Valid {
+			msg.ThreadID = threadID.String
+		}
+		if flags.Valid {
+			msg.Flags = int(flags.Int64)
 		}
 		if editedAt.Valid {
 			msg.EditedAt = &editedAt.Time
