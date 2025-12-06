@@ -5,8 +5,8 @@ package google
 
 import (
 	"context"
+	"database/sql"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
 )
@@ -16,7 +16,7 @@ func init() {
 }
 
 type GooglePlugin struct {
-	store *store.Store
+	store *GoogleStore
 }
 
 func (p *GooglePlugin) Name() string {
@@ -58,7 +58,12 @@ func (p *GooglePlugin) ValidateToken(token string) bool {
 	return true
 }
 
-// SetStore allows injecting the store after construction
-func (p *GooglePlugin) SetStore(s *store.Store) {
-	p.store = s
+// SetDB initializes the Google plugin's database store
+func (p *GooglePlugin) SetDB(db *sql.DB) error {
+	store, err := NewGoogleStore(db)
+	if err != nil {
+		return err
+	}
+	p.store = store
+	return nil
 }

@@ -16,6 +16,15 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// googleStoreAdapter adapts GoogleStore to autoreply.GmailMessageSender interface
+type googleStoreAdapter struct {
+	store *GoogleStore
+}
+
+func (a *googleStoreAdapter) SendGmailMessage(userID, from, to, subject, body string) (any, error) {
+	return a.store.SendGmailMessage(userID, from, to, subject, body)
+}
+
 func (p *GooglePlugin) registerGmailRoutes(r chi.Router) {
 	r.Route("/gmail/v1/users/{userId}", func(r chi.Router) {
 		r.Get("/profile", p.getProfile)
@@ -275,7 +284,7 @@ func (p *GooglePlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Trigger auto-reply (runs in background)
-	autoReply := autoreply.New(p.store)
+	autoReply := autoreply.New(&googleStoreAdapter{store: p.store})
 	autoReply.GenerateReply(userID, from, to, subject, body, msg.ThreadID)
 
 	resp := map[string]any{

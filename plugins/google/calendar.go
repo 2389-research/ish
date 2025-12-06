@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -54,7 +53,7 @@ func (p *GooglePlugin) listEvents(w http.ResponseWriter, r *http.Request) {
 	timeMax := r.URL.Query().Get("timeMax")
 	syncToken := r.URL.Query().Get("syncToken")
 
-	var events []store.CalendarEvent
+	var events []CalendarEvent
 	var nextToken string
 	var nextSyncToken string
 	var err error
@@ -240,7 +239,7 @@ func (p *GooglePlugin) createEvent(w http.ResponseWriter, r *http.Request) {
 		recurrenceJSON = string(bytes)
 	}
 
-	event, err := p.store.CreateCalendarEvent(&store.CalendarEvent{
+	event, err := p.store.CreateCalendarEvent(&CalendarEvent{
 		CalendarID:  calendarID,
 		Summary:     req.Summary,
 		Description: req.Description,

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -125,7 +124,7 @@ func (p *GooglePlugin) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task := &store.Task{
+	task := &Task{
 		ListID: listID,
 		Title:  req.Title,
 		Notes:  req.Notes,

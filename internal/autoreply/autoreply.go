@@ -12,21 +12,25 @@ import (
 	"time"
 
 	"github.com/sashabaranov/go-openai"
-	"github.com/2389/ish/internal/store"
 )
+
+// GmailMessageSender is the interface for sending Gmail messages
+type GmailMessageSender interface {
+	SendGmailMessage(userID, from, to, subject, body string) (any, error)
+}
 
 // AutoReply handles automatic email responses
 type AutoReply struct {
-	store      *store.Store
-	openaiKey  string
-	enabled    bool
-	minDelay   int
-	maxDelay   int
-	templates  []string
+	store     GmailMessageSender
+	openaiKey string
+	enabled   bool
+	minDelay  int
+	maxDelay  int
+	templates []string
 }
 
 // New creates a new AutoReply instance
-func New(s *store.Store) *AutoReply {
+func New(s GmailMessageSender) *AutoReply {
 	enabled := os.Getenv("ISH_AUTO_REPLY") == "true"
 	openaiKey := os.Getenv("ISH_OPENAI_KEY")
 
