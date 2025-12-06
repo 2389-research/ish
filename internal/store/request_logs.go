@@ -9,6 +9,7 @@ import "time"
 type RequestLog struct {
 	ID           int64
 	Timestamp    time.Time
+	PluginName   string
 	Method       string
 	Path         string
 	StatusCode   int
@@ -24,9 +25,9 @@ type RequestLog struct {
 // LogRequest inserts a request log entry
 func (s *Store) LogRequest(log *RequestLog) error {
 	_, err := s.db.Exec(`
-		INSERT INTO request_logs (method, path, status_code, duration_ms, user_id, ip_address, user_agent, error, request_body, response_body)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, log.Method, log.Path, log.StatusCode, log.DurationMs, log.UserID, log.IPAddress, log.UserAgent, log.Error, log.RequestBody, log.ResponseBody)
+		INSERT INTO request_logs (plugin_name, method, path, status_code, duration_ms, user_id, ip_address, user_agent, error, request_body, response_body)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, log.PluginName, log.Method, log.Path, log.StatusCode, log.DurationMs, log.UserID, log.IPAddress, log.UserAgent, log.Error, log.RequestBody, log.ResponseBody)
 	return err
 }
 
@@ -52,7 +53,7 @@ type RequestLogStats struct {
 
 // GetRequestLogs retrieves request logs with filtering
 func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
-	query := `SELECT id, timestamp, method, path, status_code, duration_ms,
+	query := `SELECT id, timestamp, COALESCE(plugin_name, ''), method, path, status_code, duration_ms,
 	          COALESCE(user_id, ''), COALESCE(ip_address, ''), COALESCE(user_agent, ''), COALESCE(error, ''),
 	          COALESCE(request_body, ''), COALESCE(response_body, '')
 	          FROM request_logs WHERE 1=1`
@@ -88,7 +89,7 @@ func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
 	for rows.Next() {
 		log := &RequestLog{}
 		var timestamp string
-		if err := rows.Scan(&log.ID, &timestamp, &log.Method, &log.Path, &log.StatusCode,
+		if err := rows.Scan(&log.ID, &timestamp, &log.PluginName, &log.Method, &log.Path, &log.StatusCode,
 			&log.DurationMs, &log.UserID, &log.IPAddress, &log.UserAgent, &log.Error,
 			&log.RequestBody, &log.ResponseBody); err != nil {
 			return nil, err

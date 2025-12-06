@@ -165,9 +165,31 @@ func (s *Store) migrate() error {
 		"ALTER TABLE people ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 		"ALTER TABLE request_logs ADD COLUMN request_body TEXT",
 		"ALTER TABLE request_logs ADD COLUMN response_body TEXT",
+		"ALTER TABLE request_logs ADD COLUMN plugin_name TEXT DEFAULT ''",
 	}
 	for _, m := range migrations {
 		s.db.Exec(m) // Ignore errors for already existing columns
+	}
+
+	// Create oauth_tokens table
+	oauthSchema := `
+	CREATE TABLE IF NOT EXISTS oauth_tokens (
+		token TEXT PRIMARY KEY,
+		plugin_name TEXT NOT NULL,
+		user_id TEXT,
+		scopes TEXT,
+		expires_at TIMESTAMP,
+		refresh_token TEXT,
+		revoked BOOLEAN DEFAULT 0,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_oauth_tokens_plugin ON oauth_tokens(plugin_name);
+	CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id);
+	`
+	_, err = s.db.Exec(oauthSchema)
+	if err != nil {
+		return err
 	}
 
 	return nil
