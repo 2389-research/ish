@@ -1,7 +1,7 @@
 // ABOUTME: E2E integration tests for Discord webhook plugin
 // ABOUTME: Tests full webhook flow including create, send, edit, delete
 
-package e2e_test
+package e2e
 
 import (
 	"encoding/json"
