@@ -1,5 +1,5 @@
-// ABOUTME: Tests for SQLite store initialization and schema migrations.
-// ABOUTME: Verifies database setup and table creation.
+// ABOUTME: Tests for core SQLite store initialization and schema migrations.
+// ABOUTME: Verifies database setup and request_logs table creation.
 
 package store
 
@@ -18,18 +18,15 @@ func TestNewStore_CreatesDatabase(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Verify tables exist
-	tables := []string{"users", "gmail_labels", "gmail_threads", "gmail_messages", "calendars", "calendar_events", "people"}
-	for _, table := range tables {
-		var name string
-		err := s.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
-		if err != nil {
-			t.Errorf("table %s not found: %v", table, err)
-		}
+	// Verify request_logs table exists
+	var name string
+	err = s.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='request_logs'").Scan(&name)
+	if err != nil {
+		t.Errorf("request_logs table not found: %v", err)
 	}
 }
 
-func TestStore_CreateAndGetUser(t *testing.T) {
+func TestStore_GetDB(t *testing.T) {
 	dbPath := "test_ish.db"
 	defer os.Remove(dbPath)
 
@@ -39,27 +36,19 @@ func TestStore_CreateAndGetUser(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Create user
-	err = s.CreateUser("harper")
-	if err != nil {
-		t.Fatalf("CreateUser() error = %v", err)
+	// Verify GetDB returns a valid database connection
+	db := s.GetDB()
+	if db == nil {
+		t.Error("GetDB() returned nil")
 	}
 
-	// Get user
-	exists, err := s.UserExists("harper")
+	// Verify we can query the database
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM request_logs").Scan(&count)
 	if err != nil {
-		t.Fatalf("UserExists() error = %v", err)
+		t.Fatalf("Failed to query database: %v", err)
 	}
-	if !exists {
-		t.Error("UserExists() = false, want true")
-	}
-
-	// Non-existent user
-	exists, err = s.UserExists("nobody")
-	if err != nil {
-		t.Fatalf("UserExists() error = %v", err)
-	}
-	if exists {
-		t.Error("UserExists() = true for non-existent user")
+	if count != 0 {
+		t.Errorf("Expected 0 request logs, got %d", count)
 	}
 }
