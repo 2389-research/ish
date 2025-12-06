@@ -6,7 +6,6 @@ package discord
 import (
 	"context"
 	"database/sql"
-	"net/http"
 
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
