@@ -213,3 +213,125 @@ func (s *TwilioStore) ValidateAccount(accountSid, authToken string) bool {
 
 	return subtle.ConstantTimeCompare([]byte(storedToken), []byte(authToken)) == 1
 }
+
+type Message struct {
+	Sid         string
+	AccountSid  string
+	FromNumber  string
+	ToNumber    string
+	Body        string
+	Status      string
+	Direction   string
+	DateCreated time.Time
+	DateSent    *time.Time
+	DateUpdated time.Time
+	NumSegments int
+	Price       float64
+	PriceUnit   string
+}
+
+func generateSID(prefix string) (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return prefix + hex.EncodeToString(bytes), nil
+}
+
+func (s *TwilioStore) CreateMessage(accountSid, from, to, body string) (*Message, error) {
+	sid, err := generateSID("SM")
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate segments (160 chars per segment)
+	numSegments := (len(body) + 159) / 160
+	if numSegments == 0 {
+		numSegments = 1
+	}
+
+	_, err = s.db.Exec(`
+		INSERT INTO twilio_messages (sid, account_sid, from_number, to_number, body, status, direction, num_segments, price, price_unit)
+		VALUES (?, ?, ?, ?, ?, 'queued', 'outbound-api', ?, ?, 'USD')
+	`, sid, accountSid, from, to, body, numSegments, float64(numSegments)*0.0075)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetMessage(sid)
+}
+
+func (s *TwilioStore) GetMessage(sid string) (*Message, error) {
+	var msg Message
+	var dateSent sql.NullTime
+
+	err := s.db.QueryRow(`
+		SELECT sid, account_sid, from_number, to_number, body, status, direction,
+		       date_created, date_sent, date_updated, num_segments, price, price_unit
+		FROM twilio_messages
+		WHERE sid = ?
+	`, sid).Scan(
+		&msg.Sid, &msg.AccountSid, &msg.FromNumber, &msg.ToNumber, &msg.Body,
+		&msg.Status, &msg.Direction, &msg.DateCreated, &dateSent, &msg.DateUpdated,
+		&msg.NumSegments, &msg.Price, &msg.PriceUnit,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if dateSent.Valid {
+		msg.DateSent = &dateSent.Time
+	}
+
+	return &msg, nil
+}
+
+func (s *TwilioStore) UpdateMessageStatus(sid, status string) error {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE twilio_messages
+		SET status = ?, date_updated = ?, date_sent = CASE WHEN ? IN ('sent', 'delivered') AND date_sent IS NULL THEN ? ELSE date_sent END
+		WHERE sid = ?
+	`, status, now, status, now, sid)
+	return err
+}
+
+func (s *TwilioStore) ListMessages(accountSid string, limit int) ([]Message, error) {
+	rows, err := s.db.Query(`
+		SELECT sid, account_sid, from_number, to_number, body, status, direction,
+		       date_created, date_sent, date_updated, num_segments, price, price_unit
+		FROM twilio_messages
+		WHERE account_sid = ?
+		ORDER BY date_created DESC
+		LIMIT ?
+	`, accountSid, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		var dateSent sql.NullTime
+
+		err := rows.Scan(
+			&msg.Sid, &msg.AccountSid, &msg.FromNumber, &msg.ToNumber, &msg.Body,
+			&msg.Status, &msg.Direction, &msg.DateCreated, &dateSent, &msg.DateUpdated,
+			&msg.NumSegments, &msg.Price, &msg.PriceUnit,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if dateSent.Valid {
+			msg.DateSent = &dateSent.Time
+		}
+
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
+}

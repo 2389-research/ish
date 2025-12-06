@@ -34,7 +34,12 @@ func (p *TwilioPlugin) Health() core.HealthStatus {
 }
 
 func (p *TwilioPlugin) RegisterRoutes(r chi.Router) {
-	// Routes will be added in Task 3
+	// SMS API
+	r.Route("/2010-04-01/Accounts/{AccountSid}/Messages.json", func(r chi.Router) {
+		r.Post("/", p.requireAuth(p.sendMessage))
+		r.Get("/", p.requireAuth(p.listMessages))
+	})
+	r.Get("/2010-04-01/Accounts/{AccountSid}/Messages/{MessageSid}.json", p.requireAuth(p.getMessage))
 }
 
 func (p *TwilioPlugin) RegisterAuth(r chi.Router) {

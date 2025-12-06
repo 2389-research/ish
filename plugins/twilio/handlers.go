@@ -1,0 +1,120 @@
+// ABOUTME: HTTP handlers for Twilio API endpoints
+// ABOUTME: Implements SMS and Voice API routes
+
+package twilio
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+)
+
+func (p *TwilioPlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
+	accountSid := r.Context().Value("account_sid").(string)
+
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter")
+		return
+	}
+
+	to := r.FormValue("To")
+	from := r.FormValue("From")
+	body := r.FormValue("Body")
+
+	if to == "" || from == "" {
+		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter To or From")
+		return
+	}
+
+	message, err := p.store.CreateMessage(accountSid, from, to, body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 20005, "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(messageToResponse(message))
+}
+
+func (p *TwilioPlugin) getMessage(w http.ResponseWriter, r *http.Request) {
+	messageSid := chi.URLParam(r, "MessageSid")
+
+	message, err := p.store.GetMessage(messageSid)
+	if err != nil {
+		writeError(w, http.StatusNotFound, 20404, "Message not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(messageToResponse(message))
+}
+
+func (p *TwilioPlugin) listMessages(w http.ResponseWriter, r *http.Request) {
+	accountSid := r.Context().Value("account_sid").(string)
+
+	pageSize := 50
+	if ps := r.URL.Query().Get("PageSize"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
+			pageSize = parsed
+		}
+	}
+
+	messages, err := p.store.ListMessages(accountSid, pageSize)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 20005, "Internal server error")
+		return
+	}
+
+	responseMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		responseMessages[i] = messageToResponse(&msg)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"messages":  responseMessages,
+		"page":      0,
+		"page_size": pageSize,
+	})
+}
+
+func messageToResponse(msg *Message) map[string]interface{} {
+	response := map[string]interface{}{
+		"sid":           msg.Sid,
+		"account_sid":   msg.AccountSid,
+		"from":          msg.FromNumber,
+		"to":            msg.ToNumber,
+		"body":          msg.Body,
+		"status":        msg.Status,
+		"direction":     msg.Direction,
+		"date_created":  msg.DateCreated.Format(time.RFC1123Z),
+		"date_updated":  msg.DateUpdated.Format(time.RFC1123Z),
+		"num_segments":  msg.NumSegments,
+		"price":         msg.Price,
+		"price_unit":    msg.PriceUnit,
+		"error_code":    nil,
+		"error_message": nil,
+	}
+
+	if msg.DateSent != nil {
+		response["date_sent"] = msg.DateSent.Format(time.RFC1123Z)
+	} else {
+		response["date_sent"] = nil
+	}
+
+	return response
+}
+
+func writeError(w http.ResponseWriter, statusCode, errorCode int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code":    errorCode,
+		"message": message,
+		"status":  statusCode,
+	})
+}
