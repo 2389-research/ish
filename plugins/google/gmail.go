@@ -326,13 +326,22 @@ func parseEmail(email string) (map[string]string, string) {
 	return headers, body
 }
 
+// writeJSON writes a JSON response to the ResponseWriter.
+// Note: If JSON encoding fails, an error is logged but the function continues.
+// Since headers are already sent at this point, we cannot return a different error status.
+// The client will receive a partial/malformed JSON response which they should handle.
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("Failed to encode JSON response: %v", err)
+		// Note: Cannot change status code or send error response - headers already committed
 	}
 }
 
+// writeError writes a Google API-style error response.
+// Note: If JSON encoding fails after WriteHeader is called, an error is logged but no
+// recovery is possible since headers and status code are already sent to the client.
+// The client will receive a partial/malformed error response.
 func writeError(w http.ResponseWriter, code int, message, status string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -344,5 +353,6 @@ func writeError(w http.ResponseWriter, code int, message, status string) {
 		},
 	}); err != nil {
 		log.Printf("Failed to encode error response: %v", err)
+		// Note: Cannot recover - status code and headers already sent
 	}
 }

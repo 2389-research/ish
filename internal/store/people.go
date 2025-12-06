@@ -40,7 +40,7 @@ func (s *Store) SearchPeople(userID string, query string, pageSize int, pageToke
 	args := []any{userID}
 
 	if query != "" {
-		sqlQuery += " AND data LIKE ?"
+		sqlQuery += " AND data LIKE ? ESCAPE '\\'"
 		escaped := strings.ReplaceAll(query, "%", "\\%")
 		escaped = strings.ReplaceAll(escaped, "_", "\\_")
 		args = append(args, "%"+escaped+"%")
