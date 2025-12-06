@@ -47,15 +47,13 @@ func (p *TwilioPlugin) RegisterRoutes(r chi.Router) {
 		r.Get("/", p.requireAuth(p.listCalls))
 	})
 	r.Get("/2010-04-01/Accounts/{AccountSid}/Calls/{CallSid}.json", p.requireAuth(p.getCall))
+
+	// Phone Numbers API
+	r.Get("/2010-04-01/Accounts/{AccountSid}/IncomingPhoneNumbers.json", p.requireAuth(p.listPhoneNumbers))
 }
 
 func (p *TwilioPlugin) RegisterAuth(r chi.Router) {
 	// Twilio uses HTTP Basic Auth, handled per-request
-}
-
-func (p *TwilioPlugin) Schema() core.PluginSchema {
-	// Schema will be added in Task 5
-	return core.PluginSchema{}
 }
 
 func (p *TwilioPlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {

@@ -460,3 +460,139 @@ func (s *TwilioStore) ListCalls(accountSid string, limit int) ([]Call, error) {
 
 	return calls, nil
 }
+
+type PhoneNumber struct {
+	Sid                  string
+	AccountSid           string
+	PhoneNumber          string
+	FriendlyName         string
+	VoiceURL             string
+	VoiceMethod          string
+	SmsURL               string
+	SmsMethod            string
+	StatusCallback       string
+	StatusCallbackMethod string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+func (s *TwilioStore) CreatePhoneNumber(accountSid, phoneNumber, friendlyName string) (*PhoneNumber, error) {
+	sid, err := generateSID("PN")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.db.Exec(`
+		INSERT INTO twilio_phone_numbers (sid, account_sid, phone_number, friendly_name)
+		VALUES (?, ?, ?, ?)
+	`, sid, accountSid, phoneNumber, friendlyName)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetPhoneNumber(sid)
+}
+
+func (s *TwilioStore) GetPhoneNumber(sid string) (*PhoneNumber, error) {
+	var pn PhoneNumber
+	var friendlyName, voiceURL, voiceMethod, smsURL, smsMethod, statusCallback, statusCallbackMethod sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT sid, account_sid, phone_number, friendly_name, voice_url, voice_method,
+		       sms_url, sms_method, status_callback, status_callback_method,
+		       created_at, updated_at
+		FROM twilio_phone_numbers
+		WHERE sid = ?
+	`, sid).Scan(
+		&pn.Sid, &pn.AccountSid, &pn.PhoneNumber, &friendlyName,
+		&voiceURL, &voiceMethod, &smsURL, &smsMethod,
+		&statusCallback, &statusCallbackMethod,
+		&pn.CreatedAt, &pn.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if friendlyName.Valid {
+		pn.FriendlyName = friendlyName.String
+	}
+	if voiceURL.Valid {
+		pn.VoiceURL = voiceURL.String
+	}
+	if voiceMethod.Valid {
+		pn.VoiceMethod = voiceMethod.String
+	}
+	if smsURL.Valid {
+		pn.SmsURL = smsURL.String
+	}
+	if smsMethod.Valid {
+		pn.SmsMethod = smsMethod.String
+	}
+	if statusCallback.Valid {
+		pn.StatusCallback = statusCallback.String
+	}
+	if statusCallbackMethod.Valid {
+		pn.StatusCallbackMethod = statusCallbackMethod.String
+	}
+
+	return &pn, nil
+}
+
+func (s *TwilioStore) ListPhoneNumbers(accountSid string) ([]PhoneNumber, error) {
+	rows, err := s.db.Query(`
+		SELECT sid, account_sid, phone_number, friendly_name, voice_url, voice_method,
+		       sms_url, sms_method, status_callback, status_callback_method,
+		       created_at, updated_at
+		FROM twilio_phone_numbers
+		WHERE account_sid = ?
+		ORDER BY created_at DESC
+	`, accountSid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var numbers []PhoneNumber
+	for rows.Next() {
+		var pn PhoneNumber
+		var friendlyName, voiceURL, voiceMethod, smsURL, smsMethod, statusCallback, statusCallbackMethod sql.NullString
+
+		err := rows.Scan(
+			&pn.Sid, &pn.AccountSid, &pn.PhoneNumber, &friendlyName,
+			&voiceURL, &voiceMethod, &smsURL, &smsMethod,
+			&statusCallback, &statusCallbackMethod,
+			&pn.CreatedAt, &pn.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if friendlyName.Valid {
+			pn.FriendlyName = friendlyName.String
+		}
+		if voiceURL.Valid {
+			pn.VoiceURL = voiceURL.String
+		}
+		if voiceMethod.Valid {
+			pn.VoiceMethod = voiceMethod.String
+		}
+		if smsURL.Valid {
+			pn.SmsURL = smsURL.String
+		}
+		if smsMethod.Valid {
+			pn.SmsMethod = smsMethod.String
+		}
+		if statusCallback.Valid {
+			pn.StatusCallback = statusCallback.String
+		}
+		if statusCallbackMethod.Valid {
+			pn.StatusCallbackMethod = statusCallbackMethod.String
+		}
+
+		numbers = append(numbers, pn)
+	}
+
+	return numbers, nil
+}

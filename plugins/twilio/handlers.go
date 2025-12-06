@@ -210,3 +210,36 @@ func callToResponse(call *Call) map[string]interface{} {
 
 	return response
 }
+
+func (p *TwilioPlugin) listPhoneNumbers(w http.ResponseWriter, r *http.Request) {
+	accountSid := r.Context().Value("account_sid").(string)
+
+	numbers, err := p.store.ListPhoneNumbers(accountSid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 20005, "Internal server error")
+		return
+	}
+
+	responseNumbers := make([]map[string]interface{}, len(numbers))
+	for i, num := range numbers {
+		responseNumbers[i] = map[string]interface{}{
+			"sid":                      num.Sid,
+			"account_sid":              num.AccountSid,
+			"phone_number":             num.PhoneNumber,
+			"friendly_name":            num.FriendlyName,
+			"voice_url":                num.VoiceURL,
+			"voice_method":             num.VoiceMethod,
+			"sms_url":                  num.SmsURL,
+			"sms_method":               num.SmsMethod,
+			"status_callback":          num.StatusCallback,
+			"status_callback_method":   num.StatusCallbackMethod,
+			"date_created":             num.CreatedAt.Format(time.RFC1123Z),
+			"date_updated":             num.UpdatedAt.Format(time.RFC1123Z),
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"incoming_phone_numbers": responseNumbers,
+	})
+}
