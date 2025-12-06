@@ -5,6 +5,7 @@ package twilio
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"time"
@@ -210,5 +211,5 @@ func (s *TwilioStore) ValidateAccount(accountSid, authToken string) bool {
 		return false
 	}
 
-	return storedToken == authToken
+	return subtle.ConstantTimeCompare([]byte(storedToken), []byte(authToken)) == 1
 }
