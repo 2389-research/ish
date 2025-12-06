@@ -6,6 +6,8 @@ package github
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"net/http"
 
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
@@ -13,6 +15,58 @@ import (
 
 func init() {
 	core.Register(&GitHubPlugin{})
+}
+
+type contextKey string
+
+const userContextKey contextKey = "github_user"
+
+// extractToken extracts GitHub token from Authorization header
+// Supports both "Bearer <token>" and "token <token>" formats
+func extractToken(r *http.Request) (string, bool) {
+	auth := r.Header.Get("Authorization")
+	if auth == "" {
+		return "", false
+	}
+
+	// Try "Bearer <token>" format
+	if len(auth) > 7 && auth[:7] == "Bearer " {
+		return auth[7:], true
+	}
+
+	// Try "token <token>" format (GitHub's alternative)
+	if len(auth) > 6 && auth[:6] == "token " {
+		return auth[6:], true
+	}
+
+	return "", false
+}
+
+// requireAuth middleware validates GitHub token and adds user to context
+func (p *GitHubPlugin) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := extractToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "requires authentication")
+			return
+		}
+
+		user, err := p.store.ValidateToken(token)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "bad credentials")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// writeError writes a GitHub-style JSON error response
+func writeError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	fmt.Fprintf(w, `{"message": "%s"}`, message)
 }
 
 type GitHubPlugin struct {
