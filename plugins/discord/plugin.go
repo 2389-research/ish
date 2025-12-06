@@ -50,11 +50,6 @@ func (p *DiscordPlugin) RegisterAuth(r chi.Router) {
 	// Discord webhooks don't use OAuth
 }
 
-func (p *DiscordPlugin) Schema() core.PluginSchema {
-	// Schema will be added in later task
-	return core.PluginSchema{Resources: []core.ResourceSchema{}}
-}
-
 func (p *DiscordPlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {
 	return core.SeedData{
 		Summary: "Discord plugin seeding not implemented",
