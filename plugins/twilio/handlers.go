@@ -5,6 +5,7 @@ package twilio
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -36,7 +37,9 @@ func (p *TwilioPlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Queue immediate webhook for "queued" status
-	p.QueueMessageWebhook(message.Sid, "queued", 0)
+	if err := p.QueueMessageWebhook(message.Sid, "queued", 0); err != nil {
+		log.Printf("Failed to queue webhook for message %s: %v", message.Sid, err)
+	}
 
 	// Start async lifecycle simulation
 	go p.SimulateMessageLifecycle(message.Sid)
@@ -149,7 +152,9 @@ func (p *TwilioPlugin) initiateCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Queue immediate webhook for "initiated" status
-	p.QueueCallWebhook(call.Sid, "initiated", 0)
+	if err := p.QueueCallWebhook(call.Sid, "initiated", 0); err != nil {
+		log.Printf("Failed to queue webhook for call %s: %v", call.Sid, err)
+	}
 
 	// Start async lifecycle simulation
 	go p.SimulateCallLifecycle(call.Sid)
