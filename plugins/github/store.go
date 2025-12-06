@@ -393,3 +393,178 @@ func generateToken(prefix string) (string, error) {
 	}
 	return prefix + "_" + hex.EncodeToString(bytes), nil
 }
+
+// GetUserByID gets a user by ID
+func (s *GitHubStore) GetUserByID(id int64) (*User, error) {
+	var user User
+	var name, email, avatarURL sql.NullString
+	err := s.db.QueryRow(`
+		SELECT id, login, name, email, avatar_url, type, created_at, updated_at
+		FROM github_users WHERE id = ?
+	`, id).Scan(&user.ID, &user.Login, &name, &email, &avatarURL, &user.Type, &user.CreatedAt, &user.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if name.Valid {
+		user.Name = name.String
+	}
+	if email.Valid {
+		user.Email = email.String
+	}
+	if avatarURL.Valid {
+		user.AvatarURL = avatarURL.String
+	}
+
+	return &user, nil
+}
+
+// CreateRepository creates a new repository
+func (s *GitHubStore) CreateRepository(ownerID int64, name, description string, private bool) (*Repository, error) {
+	// Get owner login
+	var ownerLogin string
+	err := s.db.QueryRow(`SELECT login FROM github_users WHERE id = ?`, ownerID).Scan(&ownerLogin)
+	if err != nil {
+		return nil, err
+	}
+	fullName := fmt.Sprintf("%s/%s", ownerLogin, name)
+
+	now := time.Now()
+	result, err := s.db.Exec(`
+		INSERT INTO github_repositories (owner_id, name, full_name, description, private, default_branch, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'main', ?, ?)
+	`, ownerID, name, fullName, description, private, now, now)
+
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Repository{
+		ID:            id,
+		OwnerID:       ownerID,
+		Name:          name,
+		FullName:      fullName,
+		Description:   description,
+		Private:       private,
+		DefaultBranch: "main",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
+// GetRepository gets a repository by owner ID and name
+func (s *GitHubStore) GetRepository(ownerID int64, name string) (*Repository, error) {
+	var repo Repository
+	var description sql.NullString
+	var pushedAt sql.NullTime
+
+	err := s.db.QueryRow(`
+		SELECT id, owner_id, name, full_name, description, private, default_branch, fork, archived, disabled,
+			stargazers_count, watchers_count, forks_count, open_issues_count,
+			created_at, updated_at, pushed_at
+		FROM github_repositories
+		WHERE owner_id = ? AND name = ?
+	`, ownerID, name).Scan(
+		&repo.ID, &repo.OwnerID, &repo.Name, &repo.FullName, &description, &repo.Private,
+		&repo.DefaultBranch, &repo.Fork, &repo.Archived, &repo.Disabled,
+		&repo.StargazersCount, &repo.WatchersCount, &repo.ForksCount, &repo.OpenIssuesCount,
+		&repo.CreatedAt, &repo.UpdatedAt, &pushedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if description.Valid {
+		repo.Description = description.String
+	}
+	if pushedAt.Valid {
+		repo.PushedAt = &pushedAt.Time
+	}
+
+	return &repo, nil
+}
+
+// GetRepositoryByFullName gets a repository by full name (owner/repo)
+func (s *GitHubStore) GetRepositoryByFullName(fullName string) (*Repository, error) {
+	var repo Repository
+	var description sql.NullString
+	var pushedAt sql.NullTime
+
+	err := s.db.QueryRow(`
+		SELECT id, owner_id, name, full_name, description, private, default_branch, fork, archived, disabled,
+			stargazers_count, watchers_count, forks_count, open_issues_count,
+			created_at, updated_at, pushed_at
+		FROM github_repositories
+		WHERE full_name = ?
+	`, fullName).Scan(
+		&repo.ID, &repo.OwnerID, &repo.Name, &repo.FullName, &description, &repo.Private,
+		&repo.DefaultBranch, &repo.Fork, &repo.Archived, &repo.Disabled,
+		&repo.StargazersCount, &repo.WatchersCount, &repo.ForksCount, &repo.OpenIssuesCount,
+		&repo.CreatedAt, &repo.UpdatedAt, &pushedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if description.Valid {
+		repo.Description = description.String
+	}
+	if pushedAt.Valid {
+		repo.PushedAt = &pushedAt.Time
+	}
+
+	return &repo, nil
+}
+
+// ListUserRepositories lists all repositories for a user
+func (s *GitHubStore) ListUserRepositories(ownerID int64) ([]*Repository, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner_id, name, full_name, description, private, default_branch, fork, archived, disabled,
+			stargazers_count, watchers_count, forks_count, open_issues_count,
+			created_at, updated_at, pushed_at
+		FROM github_repositories
+		WHERE owner_id = ?
+		ORDER BY created_at DESC
+	`, ownerID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var repos []*Repository
+	for rows.Next() {
+		var repo Repository
+		var description sql.NullString
+		var pushedAt sql.NullTime
+
+		err := rows.Scan(
+			&repo.ID, &repo.OwnerID, &repo.Name, &repo.FullName, &description, &repo.Private,
+			&repo.DefaultBranch, &repo.Fork, &repo.Archived, &repo.Disabled,
+			&repo.StargazersCount, &repo.WatchersCount, &repo.ForksCount, &repo.OpenIssuesCount,
+			&repo.CreatedAt, &repo.UpdatedAt, &pushedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if description.Valid {
+			repo.Description = description.String
+		}
+		if pushedAt.Valid {
+			repo.PushedAt = &pushedAt.Time
+		}
+
+		repos = append(repos, &repo)
+	}
+
+	return repos, rows.Err()
+}

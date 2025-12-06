@@ -85,7 +85,36 @@ func (p *GitHubPlugin) Health() core.HealthStatus {
 }
 
 func (p *GitHubPlugin) RegisterRoutes(r chi.Router) {
-	// Will implement in later tasks
+	// User endpoints
+	r.Get("/user", p.requireAuth(p.getAuthenticatedUser))
+	r.Patch("/user", p.requireAuth(p.updateAuthenticatedUser))
+	r.Get("/users/{username}", p.requireAuth(p.getUser))
+
+	// Repository endpoints
+	r.Get("/user/repos", p.requireAuth(p.listAuthenticatedUserRepositories))
+	r.Post("/user/repos", p.requireAuth(p.createUserRepository))
+	r.Get("/repos/{owner}/{repo}", p.requireAuth(p.getRepository))
+	r.Patch("/repos/{owner}/{repo}", p.requireAuth(p.updateRepository))
+	r.Delete("/repos/{owner}/{repo}", p.requireAuth(p.deleteRepository))
+
+	// More routes will be added in later tasks
+}
+
+// Placeholder handlers for routes not yet implemented
+func (p *GitHubPlugin) updateAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+func (p *GitHubPlugin) getUser(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+func (p *GitHubPlugin) updateRepository(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+func (p *GitHubPlugin) deleteRepository(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
 }
 
 func (p *GitHubPlugin) RegisterAuth(r chi.Router) {
