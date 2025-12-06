@@ -32,7 +32,9 @@ func (p *GooglePlugin) Health() core.HealthStatus {
 
 func (p *GooglePlugin) RegisterRoutes(r chi.Router) {
 	p.registerGmailRoutes(r)
-	// Calendar, People, Tasks routes will be added in Task 6
+	p.registerCalendarRoutes(r)
+	p.registerPeopleRoutes(r)
+	p.registerTasksRoutes(r)
 }
 
 func (p *GooglePlugin) RegisterAuth(r chi.Router) {
