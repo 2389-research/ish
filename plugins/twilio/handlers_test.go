@@ -202,3 +202,102 @@ func TestInitiateCall(t *testing.T) {
 		t.Fatalf("Expected status initiated, got %s", response["status"])
 	}
 }
+
+func TestInvalidPhoneNumbers(t *testing.T) {
+	plugin, db := setupTestPlugin(t)
+	defer db.Close()
+
+	account, _ := plugin.store.GetOrCreateAccount("AC999")
+
+	tests := []struct {
+		name string
+		to   string
+		from string
+	}{
+		{"missing plus", "15551234567", "+15559876543"},
+		{"starts with zero", "+05551234567", "+15559876543"},
+		{"too short", "+1", "+15559876543"},
+		{"invalid characters", "+1-555-123-4567", "+15559876543"},
+		{"invalid from", "+15551234567", "5559876543"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			form := url.Values{}
+			form.Set("To", tt.to)
+			form.Set("From", tt.from)
+			form.Set("Body", "Test")
+
+			req := httptest.NewRequest("POST", "/2010-04-01/Accounts/AC999/Messages.json", bytes.NewBufferString(form.Encode()))
+			req.Header.Set("Authorization", basicAuth("AC999", account.AuthToken))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			rr := httptest.NewRecorder()
+			handler := plugin.requireAuth(plugin.sendMessage)
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("Expected status 400 for %s, got %d", tt.name, rr.Code)
+			}
+		})
+	}
+}
+
+func TestMessageBodyTooLong(t *testing.T) {
+	plugin, db := setupTestPlugin(t)
+	defer db.Close()
+
+	account, _ := plugin.store.GetOrCreateAccount("AC888")
+
+	// Create a body longer than 1600 characters
+	longBody := strings.Repeat("a", 1601)
+
+	form := url.Values{}
+	form.Set("To", "+15551234567")
+	form.Set("From", "+15559876543")
+	form.Set("Body", longBody)
+
+	req := httptest.NewRequest("POST", "/2010-04-01/Accounts/AC888/Messages.json", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Authorization", basicAuth("AC888", account.AuthToken))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rr := httptest.NewRecorder()
+	handler := plugin.requireAuth(plugin.sendMessage)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("Expected status 400 for long body, got %d", rr.Code)
+	}
+
+	var response map[string]interface{}
+	json.NewDecoder(rr.Body).Decode(&response)
+
+	if !strings.Contains(response["message"].(string), "maximum length") {
+		t.Errorf("Expected error message about maximum length, got %s", response["message"])
+	}
+}
+
+func TestValidPhoneNumbers(t *testing.T) {
+	tests := []struct {
+		phone string
+		valid bool
+	}{
+		{"+15551234567", true},
+		{"+442012345678", true},
+		{"+33123456789", true},
+		{"+123456789012345", true}, // max length (15 digits)
+		{"15551234567", false},      // missing +
+		{"+05551234567", false},     // starts with 0
+		{"+1", false},               // too short
+		{"+1234567890123456", false}, // too long (16 digits)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.phone, func(t *testing.T) {
+			result := validatePhoneNumber(tt.phone)
+			if result != tt.valid {
+				t.Errorf("validatePhoneNumber(%s) = %v, expected %v", tt.phone, result, tt.valid)
+			}
+		})
+	}
+}

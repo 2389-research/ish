@@ -14,6 +14,11 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// contextKey is a type for context keys to avoid collisions
+type contextKey string
+
+const accountSidKey contextKey = "account_sid"
+
 func init() {
 	core.Register(&TwilioPlugin{})
 }
@@ -106,7 +111,7 @@ func (p *TwilioPlugin) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		// Store account SID in context for handlers
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, "account_sid", accountSid)
+		ctx = context.WithValue(ctx, accountSidKey, accountSid)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

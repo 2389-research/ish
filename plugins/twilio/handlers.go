@@ -7,14 +7,22 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 )
 
+var phoneRegex = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+
+// validatePhoneNumber checks if a phone number is in E.164 format
+func validatePhoneNumber(phone string) bool {
+	return phoneRegex.MatchString(phone)
+}
+
 func (p *TwilioPlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
-	accountSid := r.Context().Value("account_sid").(string)
+	accountSid := r.Context().Value(accountSidKey).(string)
 
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter")
@@ -27,6 +35,18 @@ func (p *TwilioPlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 
 	if to == "" || from == "" || body == "" {
 		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter To, From, or Body")
+		return
+	}
+
+	// Validate phone number formats
+	if !validatePhoneNumber(to) || !validatePhoneNumber(from) {
+		writeError(w, http.StatusBadRequest, 21211, "Invalid phone number format. Must be E.164 format (e.g., +15551234567)")
+		return
+	}
+
+	// Validate message body length (max 1600 chars = 10 SMS segments)
+	if len(body) > 1600 {
+		writeError(w, http.StatusBadRequest, 21602, "Message body exceeds maximum length of 1600 characters")
 		return
 	}
 
@@ -63,7 +83,7 @@ func (p *TwilioPlugin) getMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *TwilioPlugin) listMessages(w http.ResponseWriter, r *http.Request) {
-	accountSid := r.Context().Value("account_sid").(string)
+	accountSid := r.Context().Value(accountSidKey).(string)
 
 	pageSize := 50
 	if ps := r.URL.Query().Get("PageSize"); ps != "" {
@@ -129,7 +149,7 @@ func writeError(w http.ResponseWriter, statusCode, errorCode int, message string
 }
 
 func (p *TwilioPlugin) initiateCall(w http.ResponseWriter, r *http.Request) {
-	accountSid := r.Context().Value("account_sid").(string)
+	accountSid := r.Context().Value(accountSidKey).(string)
 
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter")
@@ -142,6 +162,12 @@ func (p *TwilioPlugin) initiateCall(w http.ResponseWriter, r *http.Request) {
 
 	if to == "" || from == "" || url == "" {
 		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter To, From, or Url")
+		return
+	}
+
+	// Validate phone number formats
+	if !validatePhoneNumber(to) || !validatePhoneNumber(from) {
+		writeError(w, http.StatusBadRequest, 21211, "Invalid phone number format. Must be E.164 format (e.g., +15551234567)")
 		return
 	}
 
@@ -178,7 +204,7 @@ func (p *TwilioPlugin) getCall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *TwilioPlugin) listCalls(w http.ResponseWriter, r *http.Request) {
-	accountSid := r.Context().Value("account_sid").(string)
+	accountSid := r.Context().Value(accountSidKey).(string)
 
 	pageSize := 50
 	if ps := r.URL.Query().Get("PageSize"); ps != "" {
@@ -229,7 +255,7 @@ func callToResponse(call *Call) map[string]interface{} {
 }
 
 func (p *TwilioPlugin) listPhoneNumbers(w http.ResponseWriter, r *http.Request) {
-	accountSid := r.Context().Value("account_sid").(string)
+	accountSid := r.Context().Value(accountSidKey).(string)
 
 	numbers, err := p.store.ListPhoneNumbers(accountSid)
 	if err != nil {

@@ -10,8 +10,67 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
+
+// isPrivateIP checks if a hostname is a private or internal address
+func isPrivateIP(host string) bool {
+	// Block localhost
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+
+	// Block private IP ranges
+	if strings.HasPrefix(host, "10.") ||
+		strings.HasPrefix(host, "192.168.") ||
+		strings.HasPrefix(host, "172.16.") ||
+		strings.HasPrefix(host, "172.17.") ||
+		strings.HasPrefix(host, "172.18.") ||
+		strings.HasPrefix(host, "172.19.") ||
+		strings.HasPrefix(host, "172.20.") ||
+		strings.HasPrefix(host, "172.21.") ||
+		strings.HasPrefix(host, "172.22.") ||
+		strings.HasPrefix(host, "172.23.") ||
+		strings.HasPrefix(host, "172.24.") ||
+		strings.HasPrefix(host, "172.25.") ||
+		strings.HasPrefix(host, "172.26.") ||
+		strings.HasPrefix(host, "172.27.") ||
+		strings.HasPrefix(host, "172.28.") ||
+		strings.HasPrefix(host, "172.29.") ||
+		strings.HasPrefix(host, "172.30.") ||
+		strings.HasPrefix(host, "172.31.") ||
+		strings.HasPrefix(host, "169.254.") {
+		return true
+	}
+
+	return false
+}
+
+// validateWebhookURL validates webhook URLs to prevent SSRF attacks
+func validateWebhookURL(urlStr string) error {
+	if urlStr == "" {
+		return nil // Empty URLs are okay (no webhook configured)
+	}
+
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid webhook URL: %w", err)
+	}
+
+	// Require http or https
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("webhook URL must use http or https")
+	}
+
+	// Block internal addresses
+	host := u.Hostname()
+	if isPrivateIP(host) {
+		return fmt.Errorf("webhook URL cannot target private IP addresses")
+	}
+
+	return nil
+}
 
 // StartWebhookWorker polls the webhook queue and delivers pending webhooks
 func (p *TwilioPlugin) StartWebhookWorker(ctx context.Context) {
@@ -92,6 +151,11 @@ func (p *TwilioPlugin) QueueMessageWebhook(messageSid, status string, delay time
 		return nil
 	}
 
+	// Validate webhook URL to prevent SSRF attacks
+	if err := validateWebhookURL(webhookURL); err != nil {
+		return err
+	}
+
 	// Build form-encoded payload
 	payload := url.Values{}
 	payload.Set("MessageSid", msg.Sid)
@@ -126,6 +190,11 @@ func (p *TwilioPlugin) QueueCallWebhook(callSid, status string, delay time.Durat
 
 	if webhookURL == "" {
 		return nil
+	}
+
+	// Validate webhook URL to prevent SSRF attacks
+	if err := validateWebhookURL(webhookURL); err != nil {
+		return err
 	}
 
 	payload := url.Values{}
