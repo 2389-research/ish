@@ -35,6 +35,7 @@ func (s *Store) LogRequest(log *RequestLog) error {
 type RequestLogQuery struct {
 	Limit      int
 	Offset     int
+	PluginName string
 	Method     string
 	PathPrefix string
 	StatusCode int
@@ -59,6 +60,10 @@ func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
 	          FROM request_logs WHERE 1=1`
 	args := []any{}
 
+	if q.PluginName != "" {
+		query += " AND plugin_name = ?"
+		args = append(args, q.PluginName)
+	}
 	if q.Method != "" {
 		query += " AND method = ?"
 		args = append(args, q.Method)

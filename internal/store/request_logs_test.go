@@ -182,6 +182,115 @@ func TestGetRecentRequests(t *testing.T) {
 	}
 }
 
+func TestGetRequestLogsWithPluginFilter(t *testing.T) {
+	s := setupTestDB(t)
+	defer s.Close()
+
+	now := time.Now()
+
+	// Insert test data with multiple plugins
+	testLogs := []*RequestLog{
+		{PluginName: "google", Method: "GET", Path: "/gmail/messages", StatusCode: 200, DurationMs: 10, Timestamp: now.Add(-1 * time.Minute)},
+		{PluginName: "google", Method: "POST", Path: "/calendar/events", StatusCode: 201, DurationMs: 15, Timestamp: now.Add(-2 * time.Minute)},
+		{PluginName: "tasks", Method: "GET", Path: "/tasks", StatusCode: 200, DurationMs: 8, Timestamp: now.Add(-3 * time.Minute)},
+		{PluginName: "tasks", Method: "POST", Path: "/tasks", StatusCode: 400, DurationMs: 12, Timestamp: now.Add(-4 * time.Minute)},
+		{PluginName: "google", Method: "DELETE", Path: "/gmail/messages/1", StatusCode: 500, DurationMs: 30, Timestamp: now.Add(-5 * time.Minute)},
+	}
+
+	for _, log := range testLogs {
+		if err := s.LogRequest(log); err != nil {
+			t.Fatalf("Failed to insert test log: %v", err)
+		}
+	}
+
+	// Test filter by plugin name "google"
+	logs, err := s.GetRequestLogs(&RequestLogQuery{
+		PluginName: "google",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with plugin filter failed: %v", err)
+	}
+	if len(logs) != 3 {
+		t.Errorf("Expected 3 logs for google plugin, got %d", len(logs))
+	}
+	for _, log := range logs {
+		if log.PluginName != "google" {
+			t.Errorf("Expected plugin name 'google', got '%s'", log.PluginName)
+		}
+	}
+
+	// Test filter by plugin name "tasks"
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PluginName: "tasks",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with plugin filter failed: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Errorf("Expected 2 logs for tasks plugin, got %d", len(logs))
+	}
+	for _, log := range logs {
+		if log.PluginName != "tasks" {
+			t.Errorf("Expected plugin name 'tasks', got '%s'", log.PluginName)
+		}
+	}
+
+	// Test with empty plugin name (should return all)
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PluginName: "",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with no plugin filter failed: %v", err)
+	}
+	if len(logs) != 5 {
+		t.Errorf("Expected 5 logs for all plugins, got %d", len(logs))
+	}
+
+	// Test combining plugin filter with status code filter
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PluginName: "tasks",
+		StatusCode: 400,
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with combined filters failed: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Errorf("Expected 1 log for tasks plugin with status 400, got %d", len(logs))
+	}
+	if len(logs) > 0 && logs[0].StatusCode != 400 {
+		t.Errorf("Expected status code 400, got %d", logs[0].StatusCode)
+	}
+
+	// Test combining plugin filter with path prefix
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PluginName: "google",
+		PathPrefix: "/gmail",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with plugin and path filter failed: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Errorf("Expected 2 logs for google plugin with /gmail path, got %d", len(logs))
+	}
+
+	// Test non-existent plugin
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PluginName: "nonexistent",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with nonexistent plugin failed: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Errorf("Expected 0 logs for nonexistent plugin, got %d", len(logs))
+	}
+}
+
 // Helper to setup a test database
 func setupTestDB(t *testing.T) *Store {
 	s, err := New(":memory:")

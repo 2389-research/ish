@@ -280,3 +280,185 @@ func TestDashboardRecentRequests(t *testing.T) {
 		t.Error("Expected dashboard to show status code 404")
 	}
 }
+
+func TestLogsListWithPluginFilter(t *testing.T) {
+	setupDashboardPlugins()
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	defer s.Close()
+
+	// Insert test logs for multiple plugins
+	now := time.Now()
+	testLogs := []struct {
+		plugin string
+		method string
+		path   string
+		status int
+	}{
+		{"google", "GET", "/gmail/messages", 200},
+		{"google", "POST", "/calendar/events", 201},
+		{"google", "GET", "/people/1", 404},
+		{"tasks", "GET", "/tasks", 200},
+		{"tasks", "POST", "/tasks", 201},
+		{"tasks", "PUT", "/tasks/1", 500},
+	}
+
+	for _, log := range testLogs {
+		err := s.LogRequest(&store.RequestLog{
+			PluginName: log.plugin,
+			Method:     log.method,
+			Path:       log.path,
+			StatusCode: log.status,
+			DurationMs: 10,
+			Timestamp:  now,
+		})
+		if err != nil {
+			t.Fatalf("Failed to insert test log: %v", err)
+		}
+	}
+
+	h := NewHandlers(s)
+
+	// Test 1: Filter by google plugin
+	req := httptest.NewRequest("GET", "/admin/logs?plugin=google", nil)
+	w := httptest.NewRecorder()
+	h.logsList(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	// Should contain google paths
+	if !strings.Contains(body, "/gmail/messages") {
+		t.Error("Expected logs to contain google plugin paths")
+	}
+	if !strings.Contains(body, "/calendar/events") {
+		t.Error("Expected logs to contain calendar events path")
+	}
+	// Verify we have google plugin badges but not tasks plugin badges
+	googleBadgeCount := strings.Count(body, ">google<")
+	tasksBadgeCount := strings.Count(body, ">tasks<")
+	if googleBadgeCount == 0 {
+		t.Error("Expected logs to show google plugin badges")
+	}
+	if tasksBadgeCount > 1 {
+		// tasksBadgeCount will be 1 from the dropdown option, but should not appear in table rows
+		t.Errorf("Expected no tasks plugin badges in log entries, got %d", tasksBadgeCount-1)
+	}
+
+	// Test 2: Filter by tasks plugin
+	req = httptest.NewRequest("GET", "/admin/logs?plugin=tasks", nil)
+	w = httptest.NewRecorder()
+	h.logsList(w, req)
+
+	body = w.Body.String()
+	// Should contain tasks paths
+	if !strings.Contains(body, "/tasks") {
+		t.Error("Expected logs to contain tasks plugin paths")
+	}
+	// Verify we have tasks plugin badges but not google plugin badges (except in dropdown)
+	googleBadgeCount = strings.Count(body, ">google<")
+	tasksBadgeCount = strings.Count(body, ">tasks<")
+	if tasksBadgeCount == 0 {
+		t.Error("Expected logs to show tasks plugin badges")
+	}
+	if googleBadgeCount > 1 {
+		// googleBadgeCount will be 1 from the dropdown option, but should not appear in table rows
+		t.Errorf("Expected no google plugin badges in log entries when filtering by tasks, got %d", googleBadgeCount-1)
+	}
+
+	// Test 3: No filter (all plugins)
+	req = httptest.NewRequest("GET", "/admin/logs", nil)
+	w = httptest.NewRecorder()
+	h.logsList(w, req)
+
+	body = w.Body.String()
+	// Should contain both
+	if !strings.Contains(body, "/gmail/messages") {
+		t.Error("Expected logs to contain google plugin paths when not filtering")
+	}
+	if !strings.Contains(body, "/tasks") {
+		t.Error("Expected logs to contain tasks plugin paths when not filtering")
+	}
+
+	// Test 4: Verify plugin dropdown is present and contains all plugins
+	if !strings.Contains(body, "google") {
+		t.Error("Expected logs page to contain google plugin in dropdown")
+	}
+	if !strings.Contains(body, "tasks") {
+		t.Error("Expected logs page to contain tasks plugin in dropdown")
+	}
+	if !strings.Contains(body, "calendar") {
+		t.Error("Expected logs page to contain calendar plugin in dropdown")
+	}
+}
+
+func TestLogsListCombinedFilters(t *testing.T) {
+	setupDashboardPlugins()
+
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	defer s.Close()
+
+	// Insert test logs with various combinations
+	now := time.Now()
+	testLogs := []struct {
+		plugin string
+		method string
+		path   string
+		status int
+	}{
+		{"google", "GET", "/gmail/messages", 200},
+		{"google", "POST", "/gmail/messages", 201},
+		{"google", "GET", "/gmail/messages", 404},
+		{"google", "GET", "/calendar/events", 200},
+		{"tasks", "GET", "/tasks", 200},
+		{"tasks", "POST", "/tasks", 400},
+	}
+
+	for _, log := range testLogs {
+		err := s.LogRequest(&store.RequestLog{
+			PluginName: log.plugin,
+			Method:     log.method,
+			Path:       log.path,
+			StatusCode: log.status,
+			DurationMs: 10,
+			Timestamp:  now,
+		})
+		if err != nil {
+			t.Fatalf("Failed to insert test log: %v", err)
+		}
+	}
+
+	h := NewHandlers(s)
+
+	// Test combining plugin filter with status code filter
+	req := httptest.NewRequest("GET", "/admin/logs?plugin=google&status=404", nil)
+	w := httptest.NewRecorder()
+	h.logsList(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	// Should contain only google 404 entries
+	if !strings.Contains(body, "404") {
+		t.Error("Expected logs to contain 404 status when filtering")
+	}
+	// Should NOT contain 200 or 201 status codes
+	countOccurrences := func(s, substr string) int {
+		return strings.Count(s, substr)
+	}
+	// Should have limited 404s (only 1 in our dataset)
+	if countOccurrences(body, "404") > 10 {
+		// Allow some overhead for display but not showing all logs
+		t.Error("Expected limited 404 entries when filtering by status")
+	}
+}

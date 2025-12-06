@@ -502,6 +502,7 @@ func (h *Handlers) tasksGenerate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) logsList(w http.ResponseWriter, r *http.Request) {
 	// Get filter parameters
+	pluginName := r.URL.Query().Get("plugin")
 	method := r.URL.Query().Get("method")
 	pathPrefix := r.URL.Query().Get("path")
 	statusCode := 0
@@ -512,6 +513,7 @@ func (h *Handlers) logsList(w http.ResponseWriter, r *http.Request) {
 	logs, err := h.store.GetRequestLogs(&store.RequestLogQuery{
 		Limit:      100,
 		Offset:     0,
+		PluginName: pluginName,
 		Method:     method,
 		PathPrefix: pathPrefix,
 		StatusCode: statusCode,
@@ -539,11 +541,16 @@ func (h *Handlers) logsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get all plugin names for the dropdown
+	pluginNames := core.Names()
+
 	w.Header().Set("Content-Type", "text/html")
 	renderPage(w, "logs-list", map[string]any{
-		"Logs":         logs,
-		"Stats":        stats,
-		"TopEndpoints": topEndpoints,
+		"Logs":           logs,
+		"Stats":          stats,
+		"TopEndpoints":   topEndpoints,
+		"PluginNames":    pluginNames,
+		"SelectedPlugin": pluginName,
 	})
 }
 
