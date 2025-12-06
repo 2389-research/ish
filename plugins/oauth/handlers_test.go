@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -257,7 +256,7 @@ func TestHandleRevoke(t *testing.T) {
 	p.RegisterAuth(r)
 
 	// First, create a token to revoke
-	token := &store.OAuthToken{
+	token := &OAuthToken{
 		Token:      "token_to_revoke",
 		PluginName: "google",
 		UserID:     "test_user",
@@ -330,7 +329,7 @@ func TestHandleRevokeJSON(t *testing.T) {
 	p.RegisterAuth(r)
 
 	// Create a token to revoke
-	token := &store.OAuthToken{
+	token := &OAuthToken{
 		Token:      "json_revoke_token",
 		PluginName: "google",
 		UserID:     "test_user",

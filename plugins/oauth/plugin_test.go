@@ -5,11 +5,12 @@ package oauth
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestOAuthPluginImplementsInterface(t *testing.T) {
@@ -135,7 +136,7 @@ func TestOAuthPluginValidateToken(t *testing.T) {
 	}
 
 	// Store a valid token
-	token := &store.OAuthToken{
+	token := &OAuthToken{
 		Token:      "valid_token_123",
 		PluginName: "google",
 		UserID:     "test_user",
@@ -162,25 +163,19 @@ func TestOAuthPluginValidateToken(t *testing.T) {
 	}
 }
 
-func TestOAuthPluginSetStore(t *testing.T) {
-	s, cleanup := createTestStore(t)
-	defer cleanup()
+func TestOAuthPluginSetDB(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test database: %v", err)
+	}
+	defer db.Close()
 
 	p := &OAuthPlugin{}
-	p.SetStore(s)
-
-	if p.store != s {
-		t.Error("SetStore() should set the store field")
+	if err := p.SetDB(db); err != nil {
+		t.Fatalf("SetDB() error = %v, want nil", err)
 	}
-}
 
-// createTestStore creates a temporary test database
-func createTestStore(t *testing.T) (*store.Store, func()) {
-	t.Helper()
-	tmpDB := t.TempDir() + "/test.db"
-	s, err := store.New(tmpDB)
-	if err != nil {
-		t.Fatalf("Failed to create test store: %v", err)
+	if p.store == nil {
+		t.Error("SetDB() should set the store field")
 	}
-	return s, func() { s.Close() }
 }

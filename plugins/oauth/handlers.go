@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -92,7 +91,7 @@ func (p *OAuthPlugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store token in database
-	token := &store.OAuthToken{
+	token := &OAuthToken{
 		Token:        accessToken,
 		PluginName:   pluginName,
 		UserID:       "auto_user", // Could extract from code/state in real impl

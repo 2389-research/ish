@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
 )
@@ -17,7 +16,7 @@ func init() {
 }
 
 type OAuthPlugin struct {
-	store *store.Store
+	store *OAuthStore
 }
 
 func (p *OAuthPlugin) Name() string {
@@ -76,7 +75,12 @@ func (p *OAuthPlugin) ValidateToken(token string) bool {
 	return true
 }
 
-// SetStore allows injecting the store after construction
-func (p *OAuthPlugin) SetStore(s *store.Store) {
-	p.store = s
+// SetDB initializes the OAuth plugin's database store
+func (p *OAuthPlugin) SetDB(db *sql.DB) error {
+	store, err := NewOAuthStore(db)
+	if err != nil {
+		return err
+	}
+	p.store = store
+	return nil
 }
