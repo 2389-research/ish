@@ -55,6 +55,10 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Delete("/tasks/{id}", h.tasksDelete)
 		r.Get("/logs", h.logsList)
 	})
+
+	// Register plugin admin routes
+	pluginHandlers := &PluginHandlers{}
+	pluginHandlers.RegisterRoutes(r)
 }
 
 func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
