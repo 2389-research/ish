@@ -96,3 +96,80 @@ func writeError(w http.ResponseWriter, code int, message string) {
 		"code":    code,
 	})
 }
+
+// getWebhook handles GET /api/webhooks/{webhook.id}/{webhook.token}
+func (p *DiscordPlugin) getWebhook(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized")
+		return
+	}
+
+	webhookID := chi.URLParam(r, "webhookID")
+	webhookToken := chi.URLParam(r, "webhookToken")
+
+	webhook, err := p.store.GetWebhook(webhookID, webhookToken)
+	if err != nil {
+		writeError(w, 404, "Webhook not found")
+		return
+	}
+
+	writeJSON(w, webhook)
+}
+
+// modifyWebhook handles PATCH /api/webhooks/{webhook.id}/{webhook.token}
+func (p *DiscordPlugin) modifyWebhook(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized")
+		return
+	}
+
+	webhookID := chi.URLParam(r, "webhookID")
+	webhookToken := chi.URLParam(r, "webhookToken")
+
+	webhook, err := p.store.GetWebhook(webhookID, webhookToken)
+	if err != nil {
+		writeError(w, 404, "Webhook not found")
+		return
+	}
+
+	var req struct {
+		Name   string `json:"name"`
+		Avatar string `json:"avatar"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "Invalid request body")
+		return
+	}
+
+	if req.Name != "" {
+		webhook.Name = req.Name
+	}
+	if req.Avatar != "" {
+		webhook.Avatar = req.Avatar
+	}
+
+	if err := p.store.UpdateWebhook(webhook); err != nil {
+		writeError(w, 500, "Failed to update webhook")
+		return
+	}
+
+	writeJSON(w, webhook)
+}
+
+// deleteWebhook handles DELETE /api/webhooks/{webhook.id}/{webhook.token}
+func (p *DiscordPlugin) deleteWebhook(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized")
+		return
+	}
+
+	webhookID := chi.URLParam(r, "webhookID")
+	webhookToken := chi.URLParam(r, "webhookToken")
+
+	if err := p.store.DeleteWebhook(webhookID, webhookToken); err != nil {
+		writeError(w, 500, "Failed to delete webhook")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
