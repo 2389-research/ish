@@ -31,6 +31,73 @@ type Plugin interface {
 }
 ```
 
+## Plugin Storage
+
+Plugins that need database access implement the `DatabasePlugin` interface:
+
+```go
+type DatabasePlugin interface {
+    Plugin
+    SetDB(db *sql.DB) error
+}
+```
+
+This interface allows plugins to receive a raw `*sql.DB` connection and manage their own database tables independently. Plugins are responsible for creating and managing their own schemas.
+
+### Best Practices
+
+**1. Own Your Tables** - Create `plugins/yourplugin/store.go` with all database code
+
+Each plugin should have its own store file that encapsulates all database operations. This keeps the plugin self-contained and makes it easy to extract into an external module if needed.
+
+**2. Table Naming** - Use `{plugin}_{resource}` pattern (e.g., `discord_webhooks`, `google_messages`)
+
+This prevents table name collisions between plugins and makes it clear which plugin owns which tables.
+
+**3. Initialize Tables** - Create tables in `NewYourStore()` constructor
+
+Tables should be created when the store is initialized, typically in an `initTables()` method:
+
+```go
+func NewDiscordStore(db *sql.DB) (*DiscordStore, error) {
+    store := &DiscordStore{db: db}
+    if err := store.initTables(); err != nil {
+        return nil, err
+    }
+    return store, nil
+}
+
+func (s *DiscordStore) initTables() error {
+    queries := []string{
+        `CREATE TABLE IF NOT EXISTS discord_webhooks (...)`,
+        `CREATE TABLE IF NOT EXISTS discord_messages (...)`,
+    }
+    for _, query := range queries {
+        if _, err := s.db.Exec(query); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+**4. Migrations** - Handle schema changes in `initTables()`
+
+Use `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE IF NOT EXISTS` to handle schema evolution gracefully.
+
+**5. Self-Contained** - Keep all database logic within the plugin
+
+Don't add plugin-specific code to `internal/store/`. The core store should only handle cross-cutting concerns like request logging.
+
+### Example Structure
+
+See `plugins/discord/store.go` for a reference implementation showing:
+- Table initialization in `NewDiscordStore()`
+- Struct definitions for database models
+- CRUD methods (Create, Read, Update, Delete)
+- Helper functions for ID generation
+- Proper error handling and null handling
+
 ### Method Descriptions
 
 #### `Name() string`
