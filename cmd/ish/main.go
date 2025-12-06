@@ -23,6 +23,7 @@ import (
 	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
 	_ "github.com/2389/ish/plugins/google" // Register Google plugin
+	_ "github.com/2389/ish/plugins/oauth"  // Register OAuth plugin
 )
 
 var (
