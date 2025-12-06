@@ -24,8 +24,8 @@ func (p *TwilioPlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 	from := r.FormValue("From")
 	body := r.FormValue("Body")
 
-	if to == "" || from == "" {
-		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter To or From")
+	if to == "" || from == "" || body == "" {
+		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter To, From, or Body")
 		return
 	}
 
