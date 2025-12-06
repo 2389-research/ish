@@ -91,6 +91,36 @@ ISH uses a **plugin architecture** where each API is implemented as a plugin. Th
 
 - **Google Plugin**: Gmail, Calendar, People, and Tasks APIs
 - **OAuth Plugin**: Mock OAuth 2.0 provider for testing authentication flows
+- **Discord Plugin**: Discord webhook API v10 for testing webhook integrations
+
+### Example Usage
+
+**Discord Webhooks:**
+```bash
+# Send a webhook message
+curl -X POST http://localhost:9000/api/webhooks/YOUR_ID/YOUR_TOKEN \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Hello from ISH!",
+    "username": "My Bot",
+    "embeds": [{
+      "title": "Test Embed",
+      "description": "This is a test",
+      "color": 5814783
+    }]
+  }'
+
+# Get webhook info
+curl http://localhost:9000/api/webhooks/YOUR_ID/YOUR_TOKEN
+
+# Edit a message
+curl -X PATCH http://localhost:9000/api/webhooks/YOUR_ID/YOUR_TOKEN/messages/MESSAGE_ID \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Updated content"}'
+
+# Delete a message
+curl -X DELETE http://localhost:9000/api/webhooks/YOUR_ID/YOUR_TOKEN/messages/MESSAGE_ID
+```
 
 ### Creating Your Own Plugin
 
