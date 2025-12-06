@@ -4,15 +4,11 @@
 package admin
 
 import (
-	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/2389/ish/internal/seed"
 	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
@@ -63,23 +59,17 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 }
 
 func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
-	counts, err := h.store.GetCounts()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
 	// Get all plugins and their data
 	plugins := getPluginDashboardData(h.store)
 
 	w.Header().Set("Content-Type", "text/html")
 	renderPage(w, "dashboard", map[string]any{
-		"MessageCount": counts.Messages,
-		"ThreadCount":  counts.Threads,
-		"EventCount":   counts.Events,
-		"PeopleCount":  counts.People,
-		"Tasks":        counts.Tasks,
-		"Requests":     counts.Requests,
+		"MessageCount": 0, // TODO: implement via plugin stores
+		"ThreadCount":  0, // TODO: implement via plugin stores
+		"EventCount":   0, // TODO: implement via plugin stores
+		"PeopleCount":  0, // TODO: implement via plugin stores
+		"Tasks":        0, // TODO: implement via plugin stores
+		"Requests":     0, // TODO: implement via plugin stores
 		"Plugins":      plugins,
 	})
 }
@@ -90,36 +80,21 @@ func (h *Handlers) guide(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) gmailList(w http.ResponseWriter, r *http.Request) {
-	messages, err := h.store.ListAllGmailMessages()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
+	// TODO: Access Google plugin store directly
 	w.Header().Set("Content-Type", "text/html")
 	renderPage(w, "gmail-list", map[string]any{
-		"Messages": messages,
+		"Messages": []any{},
 	})
 }
 
 func (h *Handlers) gmailView(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	msg, err := h.store.GetGmailMessageDetail("harper", id)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "gmail-view", msg)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Gmail view not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) gmailDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := h.store.DeleteGmailMessage(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Gmail delete not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) gmailForm(w http.ResponseWriter, r *http.Request) {
@@ -128,40 +103,14 @@ func (h *Handlers) gmailForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) gmailCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	from := r.FormValue("from")
-	subject := r.FormValue("subject")
-	body := r.FormValue("body")
-	labelsStr := r.FormValue("labels")
-
-	labels := strings.Split(labelsStr, ",")
-	for i := range labels {
-		labels[i] = strings.TrimSpace(labels[i])
-	}
-
-	msg, err := h.store.CreateGmailMessageFromForm("harper", from, subject, body, labels)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	// Return just the row for htmx to append
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "gmail-row", msg)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Gmail create not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) calendarList(w http.ResponseWriter, r *http.Request) {
-	events, err := h.store.ListAllCalendarEvents()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	// TODO: Access Google plugin store directly
 	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "calendar-list", map[string]any{"Events": events})
+	renderPage(w, "calendar-list", map[string]any{"Events": []any{}})
 }
 
 func (h *Handlers) calendarForm(w http.ResponseWriter, r *http.Request) {
@@ -170,58 +119,24 @@ func (h *Handlers) calendarForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) calendarCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	evt, err := h.store.CreateCalendarEventFromForm(
-		r.FormValue("summary"),
-		r.FormValue("description"),
-		r.FormValue("start"),
-		r.FormValue("end"),
-	)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "calendar-row", evt)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Calendar create not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) calendarView(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	evt, err := h.store.GetCalendarEvent("primary", id)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	if evt == nil {
-		http.Error(w, "event not found", 404)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "calendar-view", evt)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Calendar view not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) calendarDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := h.store.DeleteCalendarEvent("primary", id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Calendar delete not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) peopleList(w http.ResponseWriter, r *http.Request) {
-	people, err := h.store.ListAllPeople()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	// TODO: Access Google plugin store directly
 	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "people-list", map[string]any{"People": people})
+	renderPage(w, "people-list", map[string]any{"People": []any{}})
 }
 
 func (h *Handlers) peopleForm(w http.ResponseWriter, r *http.Request) {
@@ -230,188 +145,39 @@ func (h *Handlers) peopleForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) peopleCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	p, err := h.store.CreatePersonFromForm("harper", r.FormValue("name"), r.FormValue("email"))
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "people-row", p)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "People create not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) peopleView(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	p, err := h.store.GetPersonView("harper", "people/"+id)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "people-view", p)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "People view not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) peopleDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := h.store.DeletePerson(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "People delete not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) gmailGenerate(w http.ResponseWriter, r *http.Request) {
-	gen := seed.NewGenerator("harper")
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	email, err := gen.GenerateSingleEmail(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	// Create the email in store
-	threadID := fmt.Sprintf("thr_%d", time.Now().UnixNano())
-	msgID := fmt.Sprintf("msg_%d", time.Now().UnixNano())
-
-	snippet := email.Body
-	if len(snippet) > 100 {
-		snippet = snippet[:100] + "..."
-	}
-
-	h.store.CreateGmailThread(&store.GmailThread{
-		ID:      threadID,
-		UserID:  "harper",
-		Snippet: snippet,
-	})
-
-	bodyEncoded := base64.StdEncoding.EncodeToString([]byte(email.Body))
-	payload := fmt.Sprintf(`{"headers":[{"name":"From","value":"%s"},{"name":"To","value":"%s"},{"name":"Subject","value":"%s"}],"body":{"data":"%s"}}`,
-		email.From, email.To, email.Subject, bodyEncoded)
-
-	h.store.CreateGmailMessage(&store.GmailMessage{
-		ID:           msgID,
-		UserID:       "harper",
-		ThreadID:     threadID,
-		LabelIDs:     email.Labels,
-		Snippet:      snippet,
-		InternalDate: time.Now().UnixMilli(),
-		Payload:      payload,
-	})
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "gmail-row", &store.GmailMessageView{
-		ID:       msgID,
-		Subject:  email.Subject,
-		Snippet:  snippet,
-		LabelIDs: email.Labels,
-	})
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Gmail generate not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) calendarGenerate(w http.ResponseWriter, r *http.Request) {
-	gen := seed.NewGenerator("harper")
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	event, err := gen.GenerateSingleEvent(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	// Build attendees JSON
-	attendees := make([]map[string]string, len(event.Attendees))
-	for i, email := range event.Attendees {
-		attendees[i] = map[string]string{"email": email}
-	}
-	attendeesJSON, _ := json.Marshal(attendees)
-
-	evtID := fmt.Sprintf("evt_%d", time.Now().UnixNano())
-	evt := &store.CalendarEvent{
-		ID:          evtID,
-		CalendarID:  "primary",
-		Summary:     event.Summary,
-		Description: event.Description,
-		StartTime:   event.StartTime,
-		EndTime:     event.EndTime,
-		Attendees:   string(attendeesJSON),
-	}
-
-	evt, err = h.store.CreateCalendarEvent(evt)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "calendar-row", evt)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Calendar generate not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) peopleGenerate(w http.ResponseWriter, r *http.Request) {
-	gen := seed.NewGenerator("harper")
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	contact, err := gen.GenerateSingleContact(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	personData := map[string]any{
-		"names": []map[string]string{
-			{"displayName": contact.Name},
-		},
-		"emailAddresses": []map[string]string{
-			{"value": contact.Email},
-		},
-	}
-	if contact.Phone != "" {
-		personData["phoneNumbers"] = []map[string]string{
-			{"value": contact.Phone},
-		}
-	}
-	if contact.Company != "" {
-		personData["organizations"] = []map[string]string{
-			{"name": contact.Company},
-		}
-	}
-	dataJSON, _ := json.Marshal(personData)
-
-	id := fmt.Sprintf("c%d", time.Now().UnixNano())
-	resourceName := "people/" + id
-	if err := h.store.CreatePerson(&store.Person{
-		ResourceName: resourceName,
-		UserID:       "harper",
-		Data:         string(dataJSON),
-	}); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "people-row", &store.PersonView{
-		ID:           id,
-		ResourceName: resourceName,
-		DisplayName:  contact.Name,
-		Email:        contact.Email,
-	})
+	// TODO: Access Google plugin store directly
+	http.Error(w, "People generate not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) tasksList(w http.ResponseWriter, r *http.Request) {
-	tasks, err := h.store.ListAllTasks()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	// TODO: Access Google plugin store directly
 	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "tasks-list", map[string]any{"Tasks": tasks})
+	renderPage(w, "tasks-list", map[string]any{"Tasks": []any{}})
 }
 
 func (h *Handlers) tasksForm(w http.ResponseWriter, r *http.Request) {
@@ -420,84 +186,23 @@ func (h *Handlers) tasksForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) tasksCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	task, err := h.store.CreateTaskFromForm(
-		r.FormValue("title"),
-		r.FormValue("notes"),
-		r.FormValue("due"),
-		r.FormValue("status"),
-	)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "tasks-row", task)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Tasks create not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) tasksView(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	task, err := h.store.GetTask("@default", id)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html")
-	renderPage(w, "tasks-view", task)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Tasks view not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) tasksDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := h.store.DeleteTask("@default", id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Tasks delete not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) tasksGenerate(w http.ResponseWriter, r *http.Request) {
-	// Generate a task using static data (no AI generation for now)
-	titles := []string{
-		"Review project proposal",
-		"Prepare quarterly report",
-		"Schedule team meeting",
-		"Update documentation",
-		"Fix production bug",
-		"Refactor authentication logic",
-		"Write unit tests",
-		"Deploy to staging environment",
-	}
-	notes := []string{
-		"High priority - needs review by end of week",
-		"Include metrics from last quarter",
-		"Discuss upcoming sprint planning",
-		"Update API documentation with new endpoints",
-		"User reported login issues",
-		"Improve code maintainability",
-		"Increase test coverage to 80%",
-		"Test all new features before production deploy",
-	}
-
-	idx := int(time.Now().UnixNano()) % len(titles)
-
-	task, err := h.store.CreateTaskFromForm(
-		titles[idx],
-		notes[idx],
-		time.Now().Add(7*24*time.Hour).Format(time.RFC3339),
-		"needsAction",
-	)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderPartial(w, "tasks-row", task)
+	// TODO: Access Google plugin store directly
+	http.Error(w, "Tasks generate not yet implemented with plugin architecture", 501)
 }
 
 func (h *Handlers) logsList(w http.ResponseWriter, r *http.Request) {
