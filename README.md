@@ -92,6 +92,7 @@ ISH uses a **plugin architecture** where each API is implemented as a plugin. Th
 - **Google Plugin**: Gmail, Calendar, People, and Tasks APIs
 - **OAuth Plugin**: Mock OAuth 2.0 provider for testing authentication flows
 - **Discord Plugin**: Discord webhook API v10 for testing webhook integrations
+- **Twilio Plugin**: Twilio SMS and Voice APIs with async webhook callbacks
 
 ### Example Usage
 
