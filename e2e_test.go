@@ -36,15 +36,16 @@ func setupTestServer(t *testing.T) (*httptest.Server, func()) {
 	r := chi.NewRouter()
 	r.Use(auth.Middleware)
 
-	// Initialize all plugins with store (same as main.go)
+	// Initialize all plugins with database access
 	for _, plugin := range core.All() {
-		// Set store for plugins that need it
-		type storePlugin interface {
-			SetStore(*store.Store)
+		// Set database for plugins that need it
+		if dbPlugin, ok := plugin.(core.DatabasePlugin); ok {
+			if err := dbPlugin.SetDB(s.GetDB()); err != nil {
+				t.Fatalf("failed to initialize plugin %s: %v", plugin.Name(), err)
+			}
 		}
-		if sp, ok := plugin.(storePlugin); ok {
-			sp.SetStore(s)
-		}
+
+		// Register routes
 		plugin.RegisterAuth(r)
 		plugin.RegisterRoutes(r)
 	}

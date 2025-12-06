@@ -76,12 +76,14 @@ func StartTestServer(t *testing.T) *TestServer {
 
 	// Register all plugins
 	for _, plugin := range core.All() {
-		type storePlugin interface {
-			SetStore(*store.Store)
+		// Set database for plugins that need it
+		if dbPlugin, ok := plugin.(core.DatabasePlugin); ok {
+			if err := dbPlugin.SetDB(s.GetDB()); err != nil {
+				t.Fatalf("failed to initialize plugin %s: %v", plugin.Name(), err)
+			}
 		}
-		if sp, ok := plugin.(storePlugin); ok {
-			sp.SetStore(s)
-		}
+
+		// Register routes
 		plugin.RegisterAuth(r)
 		plugin.RegisterRoutes(r)
 	}

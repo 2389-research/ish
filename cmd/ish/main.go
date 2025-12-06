@@ -101,15 +101,16 @@ func newServer(dbPath string) (http.Handler, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Initialize all plugins with store
+	// Initialize all plugins with database access
 	for _, plugin := range core.All() {
-		// Set store for plugins that need it
-		type storePlugin interface {
-			SetStore(*store.Store)
+		// Set database for plugins that need it
+		if dbPlugin, ok := plugin.(core.DatabasePlugin); ok {
+			if err := dbPlugin.SetDB(s.GetDB()); err != nil {
+				return nil, fmt.Errorf("failed to initialize plugin %s: %w", plugin.Name(), err)
+			}
 		}
-		if sp, ok := plugin.(storePlugin); ok {
-			sp.SetStore(s)
-		}
+
+		// Register routes
 		plugin.RegisterAuth(r)
 		plugin.RegisterRoutes(r)
 	}
