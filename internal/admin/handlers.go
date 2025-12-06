@@ -14,6 +14,7 @@ import (
 
 	"github.com/2389/ish/internal/seed"
 	"github.com/2389/ish/internal/store"
+	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -68,6 +69,9 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get all plugins and their data
+	plugins := getPluginDashboardData(h.store)
+
 	w.Header().Set("Content-Type", "text/html")
 	renderPage(w, "dashboard", map[string]any{
 		"MessageCount": counts.Messages,
@@ -76,6 +80,7 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
 		"PeopleCount":  counts.People,
 		"Tasks":        counts.Tasks,
 		"Requests":     counts.Requests,
+		"Plugins":      plugins,
 	})
 }
 
@@ -556,4 +561,63 @@ func prettyJSON(s string) string {
 		return s
 	}
 	return string(formatted)
+}
+
+// PluginDashboardData represents data for a plugin on the dashboard
+type PluginDashboardData struct {
+	Name           string
+	Health         core.HealthStatus
+	RequestCount   int
+	ErrorRate      float64
+	RecentRequests []*store.RequestLog
+	Resources      []PluginResourceLink
+}
+
+// PluginResourceLink represents a quick link to a plugin resource
+type PluginResourceLink struct {
+	Name string
+	Slug string
+	URL  string
+}
+
+// getPluginDashboardData fetches dashboard data for all plugins
+func getPluginDashboardData(s *store.Store) []PluginDashboardData {
+	yesterday := time.Now().Add(-24 * time.Hour)
+	var pluginData []PluginDashboardData
+
+	for _, plugin := range core.All() {
+		name := plugin.Name()
+		health := plugin.Health()
+
+		// Get request count in last 24 hours
+		requestCount, _ := s.GetPluginRequestCount(name, yesterday)
+
+		// Get error rate in last 24 hours
+		errorRate, _ := s.GetPluginErrorRate(name, yesterday)
+
+		// Get 5 most recent requests
+		recentRequests, _ := s.GetRecentRequests(name, 5)
+
+		// Get resource links from schema
+		schema := plugin.Schema()
+		var resources []PluginResourceLink
+		for _, res := range schema.Resources {
+			resources = append(resources, PluginResourceLink{
+				Name: res.Name,
+				Slug: res.Slug,
+				URL:  fmt.Sprintf("/admin/plugins/%s/%s", name, res.Slug),
+			})
+		}
+
+		pluginData = append(pluginData, PluginDashboardData{
+			Name:           name,
+			Health:         health,
+			RequestCount:   requestCount,
+			ErrorRate:      errorRate,
+			RecentRequests: recentRequests,
+			Resources:      resources,
+		})
+	}
+
+	return pluginData
 }

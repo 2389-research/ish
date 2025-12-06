@@ -156,3 +156,78 @@ func (s *Store) GetTopEndpoints(limit int) ([]map[string]any, error) {
 	}
 	return endpoints, nil
 }
+
+// GetPluginRequestCount returns the number of requests for a plugin since a given time
+func (s *Store) GetPluginRequestCount(pluginName string, since time.Time) (int, error) {
+	var count int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM request_logs
+		WHERE plugin_name = ? AND timestamp >= ?
+	`, pluginName, since).Scan(&count)
+	return count, err
+}
+
+// GetPluginErrorRate returns the error rate percentage for a plugin since a given time
+func (s *Store) GetPluginErrorRate(pluginName string, since time.Time) (float64, error) {
+	var totalCount, errorCount int
+
+	// Get total requests
+	err := s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM request_logs
+		WHERE plugin_name = ? AND timestamp >= ?
+	`, pluginName, since).Scan(&totalCount)
+	if err != nil {
+		return 0, err
+	}
+
+	// No requests means 0% error rate
+	if totalCount == 0 {
+		return 0, nil
+	}
+
+	// Get error requests (status >= 400)
+	err = s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM request_logs
+		WHERE plugin_name = ? AND timestamp >= ? AND status_code >= 400
+	`, pluginName, since).Scan(&errorCount)
+	if err != nil {
+		return 0, err
+	}
+
+	// Calculate percentage
+	return (float64(errorCount) / float64(totalCount)) * 100.0, nil
+}
+
+// GetRecentRequests returns the most recent requests for a plugin
+func (s *Store) GetRecentRequests(pluginName string, limit int) ([]*RequestLog, error) {
+	query := `SELECT id, timestamp, COALESCE(plugin_name, ''), method, path, status_code, duration_ms,
+	          COALESCE(user_id, ''), COALESCE(ip_address, ''), COALESCE(user_agent, ''), COALESCE(error, ''),
+	          COALESCE(request_body, ''), COALESCE(response_body, '')
+	          FROM request_logs
+	          WHERE plugin_name = ?
+	          ORDER BY timestamp DESC
+	          LIMIT ?`
+
+	rows, err := s.db.Query(query, pluginName, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*RequestLog
+	for rows.Next() {
+		log := &RequestLog{}
+		var timestamp string
+		if err := rows.Scan(&log.ID, &timestamp, &log.PluginName, &log.Method, &log.Path, &log.StatusCode,
+			&log.DurationMs, &log.UserID, &log.IPAddress, &log.UserAgent, &log.Error,
+			&log.RequestBody, &log.ResponseBody); err != nil {
+			return nil, err
+		}
+		log.Timestamp, _ = time.Parse("2006-01-02 15:04:05", timestamp)
+		logs = append(logs, log)
+	}
+	return logs, nil
+}
