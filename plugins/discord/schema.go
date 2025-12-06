@@ -53,7 +53,7 @@ func (p *DiscordPlugin) Schema() core.PluginSchema {
 					{
 						Name:       "delete",
 						HTTPMethod: "DELETE",
-						Endpoint:   "/api/webhooks/{webhook_id}/token/messages/{id}",
+						Endpoint:   "/api/webhooks/{webhook_id}/{token}/messages/{id}",
 						Confirm:    true,
 					},
 				},

@@ -266,8 +266,9 @@ func TestGetWebhookMessage(t *testing.T) {
 
 	// Get message
 	req := newRequestWithParams("GET", "/api/webhooks/123/token123/messages/"+msg.ID, nil, map[string]string{
-		"webhookID": "123",
-		"messageID": msg.ID,
+		"webhookID":    "123",
+		"webhookToken": "token123",
+		"messageID":    msg.ID,
 	})
 
 	w := httptest.NewRecorder()
@@ -302,8 +303,9 @@ func TestEditWebhookMessage(t *testing.T) {
 	bodyJSON, _ := json.Marshal(editBody)
 
 	req := newRequestWithParams("PATCH", "/api/webhooks/123/token123/messages/"+msg.ID, bodyJSON, map[string]string{
-		"webhookID": "123",
-		"messageID": msg.ID,
+		"webhookID":    "123",
+		"webhookToken": "token123",
+		"messageID":    msg.ID,
 	})
 
 	w := httptest.NewRecorder()
@@ -336,8 +338,9 @@ func TestDeleteWebhookMessage(t *testing.T) {
 
 	// Delete message
 	req := newRequestWithParams("DELETE", "/api/webhooks/123/token123/messages/"+msg.ID, nil, map[string]string{
-		"webhookID": "123",
-		"messageID": msg.ID,
+		"webhookID":    "123",
+		"webhookToken": "token123",
+		"messageID":    msg.ID,
 	})
 
 	w := httptest.NewRecorder()
@@ -394,9 +397,13 @@ func TestModifyWebhookNotFound(t *testing.T) {
 func TestGetMessageNotFound(t *testing.T) {
 	plugin := setupTestPlugin(t)
 
+	// Create webhook first so token validation passes
+	plugin.store.GetOrCreateWebhook("123", "token123")
+
 	req := newRequestWithParams("GET", "/api/webhooks/123/token123/messages/999", nil, map[string]string{
-		"webhookID": "123",
-		"messageID": "999",
+		"webhookID":    "123",
+		"webhookToken": "token123",
+		"messageID":    "999",
 	})
 
 	w := httptest.NewRecorder()

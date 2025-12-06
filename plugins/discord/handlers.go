@@ -56,15 +56,27 @@ func (p *DiscordPlugin) executeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Marshal JSON fields
 	if len(req.Embeds) > 0 {
-		embedsJSON, _ := json.Marshal(req.Embeds)
+		embedsJSON, err := json.Marshal(req.Embeds)
+		if err != nil {
+			writeError(w, 400, "Invalid embeds format")
+			return
+		}
 		msg.Embeds = string(embedsJSON)
 	}
 	if len(req.Components) > 0 {
-		componentsJSON, _ := json.Marshal(req.Components)
+		componentsJSON, err := json.Marshal(req.Components)
+		if err != nil {
+			writeError(w, 400, "Invalid components format")
+			return
+		}
 		msg.Components = string(componentsJSON)
 	}
 	if len(req.Attachments) > 0 {
-		attachmentsJSON, _ := json.Marshal(req.Attachments)
+		attachmentsJSON, err := json.Marshal(req.Attachments)
+		if err != nil {
+			writeError(w, 400, "Invalid attachments format")
+			return
+		}
 		msg.Attachments = string(attachmentsJSON)
 	}
 
@@ -182,7 +194,15 @@ func (p *DiscordPlugin) getWebhookMessage(w http.ResponseWriter, r *http.Request
 	}
 
 	webhookID := chi.URLParam(r, "webhookID")
+	webhookToken := chi.URLParam(r, "webhookToken")
 	messageID := chi.URLParam(r, "messageID")
+
+	// Validate webhook exists with correct token
+	_, err := p.store.GetWebhook(webhookID, webhookToken)
+	if err != nil {
+		writeError(w, 404, "Webhook not found")
+		return
+	}
 
 	msg, err := p.store.GetMessage(webhookID, messageID)
 	if err != nil {
@@ -201,7 +221,15 @@ func (p *DiscordPlugin) editWebhookMessage(w http.ResponseWriter, r *http.Reques
 	}
 
 	webhookID := chi.URLParam(r, "webhookID")
+	webhookToken := chi.URLParam(r, "webhookToken")
 	messageID := chi.URLParam(r, "messageID")
+
+	// Validate webhook exists with correct token
+	_, err := p.store.GetWebhook(webhookID, webhookToken)
+	if err != nil {
+		writeError(w, 404, "Webhook not found")
+		return
+	}
 
 	msg, err := p.store.GetMessage(webhookID, messageID)
 	if err != nil {
@@ -224,15 +252,27 @@ func (p *DiscordPlugin) editWebhookMessage(w http.ResponseWriter, r *http.Reques
 		msg.Content = *req.Content
 	}
 	if len(req.Embeds) > 0 {
-		embedsJSON, _ := json.Marshal(req.Embeds)
+		embedsJSON, err := json.Marshal(req.Embeds)
+		if err != nil {
+			writeError(w, 400, "Invalid embeds format")
+			return
+		}
 		msg.Embeds = string(embedsJSON)
 	}
 	if len(req.Components) > 0 {
-		componentsJSON, _ := json.Marshal(req.Components)
+		componentsJSON, err := json.Marshal(req.Components)
+		if err != nil {
+			writeError(w, 400, "Invalid components format")
+			return
+		}
 		msg.Components = string(componentsJSON)
 	}
 	if len(req.Attachments) > 0 {
-		attachmentsJSON, _ := json.Marshal(req.Attachments)
+		attachmentsJSON, err := json.Marshal(req.Attachments)
+		if err != nil {
+			writeError(w, 400, "Invalid attachments format")
+			return
+		}
 		msg.Attachments = string(attachmentsJSON)
 	}
 
@@ -252,7 +292,15 @@ func (p *DiscordPlugin) deleteWebhookMessage(w http.ResponseWriter, r *http.Requ
 	}
 
 	webhookID := chi.URLParam(r, "webhookID")
+	webhookToken := chi.URLParam(r, "webhookToken")
 	messageID := chi.URLParam(r, "messageID")
+
+	// Validate webhook exists with correct token
+	_, err := p.store.GetWebhook(webhookID, webhookToken)
+	if err != nil {
+		writeError(w, 404, "Webhook not found")
+		return
+	}
 
 	if err := p.store.DeleteMessage(webhookID, messageID); err != nil {
 		writeError(w, 500, "Failed to delete message")

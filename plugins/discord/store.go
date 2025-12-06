@@ -104,7 +104,10 @@ type WebhookMessage struct {
 // generateSnowflake creates a Discord-like snowflake ID (simplified)
 func generateSnowflake() string {
 	var n uint64
-	binary.Read(rand.Reader, binary.BigEndian, &n)
+	if err := binary.Read(rand.Reader, binary.BigEndian, &n); err != nil {
+		// Fallback to time-based ID if crypto fails
+		n = uint64(time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%d", n)
 }
 

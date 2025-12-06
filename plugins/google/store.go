@@ -942,7 +942,8 @@ func (s *GoogleStore) SearchPeople(userID string, query string, pageSize int, pa
 
 	if query != "" {
 		sqlQuery += " AND data LIKE ? ESCAPE '\\'"
-		escaped := strings.ReplaceAll(query, "%", "\\%")
+		escaped := strings.ReplaceAll(query, "\\", "\\\\")
+		escaped = strings.ReplaceAll(escaped, "%", "\\%")
 		escaped = strings.ReplaceAll(escaped, "_", "\\_")
 		args = append(args, "%"+escaped+"%")
 	}

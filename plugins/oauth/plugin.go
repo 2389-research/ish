@@ -6,6 +6,7 @@ package oauth
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
@@ -69,6 +70,11 @@ func (p *OAuthPlugin) ValidateToken(token string) bool {
 
 	// Token exists but is revoked
 	if t.Revoked {
+		return false
+	}
+
+	// Check if token is expired
+	if !t.ExpiresAt.IsZero() && t.ExpiresAt.Before(time.Now()) {
 		return false
 	}
 
