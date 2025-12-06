@@ -55,6 +55,26 @@ type Repository struct {
 	PushedAt        *time.Time
 }
 
+type Issue struct {
+	ID            int64
+	RepoID        int64
+	Number        int64
+	Title         string
+	Body          string
+	State         string
+	StateReason   string
+	UserID        int64
+	AssigneeIDs   string
+	LabelIDs      string
+	MilestoneID   *int64
+	Locked        bool
+	CommentsCount int
+	IsPullRequest bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ClosedAt      *time.Time
+}
+
 func NewGitHubStore(db *sql.DB) (*GitHubStore, error) {
 	store := &GitHubStore{db: db}
 	if err := store.initTables(); err != nil {
@@ -567,4 +587,181 @@ func (s *GitHubStore) ListUserRepositories(ownerID int64) ([]*Repository, error)
 	}
 
 	return repos, rows.Err()
+}
+
+// CreateIssue creates a new issue with auto-incrementing number per repo
+func (s *GitHubStore) CreateIssue(repoID, userID int64, title, body string, isPR bool) (*Issue, error) {
+	// Get next issue number for this repo
+	var maxNumber sql.NullInt64
+	err := s.db.QueryRow(`SELECT MAX(number) FROM github_issues WHERE repo_id = ?`, repoID).Scan(&maxNumber)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	number := int64(1)
+	if maxNumber.Valid {
+		number = maxNumber.Int64 + 1
+	}
+
+	now := time.Now()
+	isPRInt := 0
+	if isPR {
+		isPRInt = 1
+	}
+
+	result, err := s.db.Exec(`
+		INSERT INTO github_issues (repo_id, number, title, body, state, user_id, is_pull_request, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)
+	`, repoID, number, title, body, userID, isPRInt, now, now)
+
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Issue{
+		ID:            id,
+		RepoID:        repoID,
+		Number:        number,
+		Title:         title,
+		Body:          body,
+		State:         "open",
+		UserID:        userID,
+		IsPullRequest: isPR,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
+// GetIssueByNumber gets an issue by repo ID and number
+func (s *GitHubStore) GetIssueByNumber(repoID int64, number int) (*Issue, error) {
+	var issue Issue
+	var body, stateReason, assigneeIDs, labelIDs sql.NullString
+	var milestoneID sql.NullInt64
+	var closedAt sql.NullTime
+
+	err := s.db.QueryRow(`
+		SELECT id, repo_id, number, title, body, state, state_reason, user_id, assignee_ids, label_ids, milestone_id,
+			locked, comments_count, is_pull_request, created_at, updated_at, closed_at
+		FROM github_issues
+		WHERE repo_id = ? AND number = ?
+	`, repoID, number).Scan(
+		&issue.ID, &issue.RepoID, &issue.Number, &issue.Title, &body, &issue.State, &stateReason,
+		&issue.UserID, &assigneeIDs, &labelIDs, &milestoneID, &issue.Locked, &issue.CommentsCount,
+		&issue.IsPullRequest, &issue.CreatedAt, &issue.UpdatedAt, &closedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if body.Valid {
+		issue.Body = body.String
+	}
+	if stateReason.Valid {
+		issue.StateReason = stateReason.String
+	}
+	if assigneeIDs.Valid {
+		issue.AssigneeIDs = assigneeIDs.String
+	}
+	if labelIDs.Valid {
+		issue.LabelIDs = labelIDs.String
+	}
+	if milestoneID.Valid {
+		id := milestoneID.Int64
+		issue.MilestoneID = &id
+	}
+	if closedAt.Valid {
+		issue.ClosedAt = &closedAt.Time
+	}
+
+	return &issue, nil
+}
+
+// ListIssues lists issues for a repository (excludes PRs by default)
+func (s *GitHubStore) ListIssues(repoID int64, state string, includePRs bool) ([]*Issue, error) {
+	query := `
+		SELECT id, repo_id, number, title, body, state, state_reason, user_id, assignee_ids, label_ids, milestone_id,
+			locked, comments_count, is_pull_request, created_at, updated_at, closed_at
+		FROM github_issues
+		WHERE repo_id = ?
+	`
+
+	args := []interface{}{repoID}
+
+	if state != "" {
+		query += " AND state = ?"
+		args = append(args, state)
+	}
+
+	if !includePRs {
+		query += " AND is_pull_request = 0"
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var issues []*Issue
+	for rows.Next() {
+		var issue Issue
+		var body, stateReason, assigneeIDs, labelIDs sql.NullString
+		var milestoneID sql.NullInt64
+		var closedAt sql.NullTime
+
+		err := rows.Scan(
+			&issue.ID, &issue.RepoID, &issue.Number, &issue.Title, &body, &issue.State, &stateReason,
+			&issue.UserID, &assigneeIDs, &labelIDs, &milestoneID, &issue.Locked, &issue.CommentsCount,
+			&issue.IsPullRequest, &issue.CreatedAt, &issue.UpdatedAt, &closedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if body.Valid {
+			issue.Body = body.String
+		}
+		if stateReason.Valid {
+			issue.StateReason = stateReason.String
+		}
+		if assigneeIDs.Valid {
+			issue.AssigneeIDs = assigneeIDs.String
+		}
+		if labelIDs.Valid {
+			issue.LabelIDs = labelIDs.String
+		}
+		if milestoneID.Valid {
+			id := milestoneID.Int64
+			issue.MilestoneID = &id
+		}
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+
+		issues = append(issues, &issue)
+	}
+
+	return issues, rows.Err()
+}
+
+// UpdateIssue updates an issue
+func (s *GitHubStore) UpdateIssue(issue *Issue) error {
+	now := time.Now()
+	issue.UpdatedAt = now
+
+	_, err := s.db.Exec(`
+		UPDATE github_issues
+		SET title = ?, body = ?, state = ?, state_reason = ?, updated_at = ?, closed_at = ?
+		WHERE id = ?
+	`, issue.Title, issue.Body, issue.State, issue.StateReason, issue.UpdatedAt, issue.ClosedAt, issue.ID)
+
+	return err
 }

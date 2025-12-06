@@ -97,6 +97,12 @@ func (p *GitHubPlugin) RegisterRoutes(r chi.Router) {
 	r.Patch("/repos/{owner}/{repo}", p.requireAuth(p.updateRepository))
 	r.Delete("/repos/{owner}/{repo}", p.requireAuth(p.deleteRepository))
 
+	// Issue endpoints
+	r.Get("/repos/{owner}/{repo}/issues", p.requireAuth(p.listIssues))
+	r.Post("/repos/{owner}/{repo}/issues", p.requireAuth(p.createIssue))
+	r.Get("/repos/{owner}/{repo}/issues/{number}", p.requireAuth(p.getIssue))
+	r.Patch("/repos/{owner}/{repo}/issues/{number}", p.requireAuth(p.updateIssue))
+
 	// More routes will be added in later tasks
 }
 

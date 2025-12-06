@@ -5,6 +5,7 @@ package github
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -134,6 +135,215 @@ func repositoryToResponse(repo *Repository, owner *User) map[string]interface{} 
 
 	if repo.PushedAt != nil {
 		response["pushed_at"] = repo.PushedAt.Format(time.RFC3339)
+	}
+
+	return response
+}
+
+// createIssue handles POST /repos/{owner}/{repo}/issues
+func (p *GitHubPlugin) createIssue(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(*User)
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+
+	var req struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	issue, err := p.store.CreateIssue(repo.ID, user.ID, req.Title, req.Body, false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create issue")
+		return
+	}
+
+	response := issueToResponse(issue, user, repo)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// listIssues handles GET /repos/{owner}/{repo}/issues
+func (p *GitHubPlugin) listIssues(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	state := r.URL.Query().Get("state") // open, closed, all
+
+	issues, err := p.store.ListIssues(repo.ID, state, false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list issues")
+		return
+	}
+
+	var response []map[string]interface{}
+	for _, issue := range issues {
+		issueUser, _ := p.store.GetUserByID(issue.UserID)
+		response = append(response, issueToResponse(issue, issueUser, repo))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getIssue handles GET /repos/{owner}/{repo}/issues/{number}
+func (p *GitHubPlugin) getIssue(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var issueNum int
+	if _, err := fmt.Sscanf(number, "%d", &issueNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid issue number")
+		return
+	}
+
+	issue, err := p.store.GetIssueByNumber(repo.ID, issueNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+
+	issueUser, _ := p.store.GetUserByID(issue.UserID)
+	response := issueToResponse(issue, issueUser, repo)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// updateIssue handles PATCH /repos/{owner}/{repo}/issues/{number}
+func (p *GitHubPlugin) updateIssue(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	var req struct {
+		Title       *string `json:"title"`
+		Body        *string `json:"body"`
+		State       *string `json:"state"`
+		StateReason *string `json:"state_reason"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var issueNum int
+	if _, err := fmt.Sscanf(number, "%d", &issueNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid issue number")
+		return
+	}
+
+	issue, err := p.store.GetIssueByNumber(repo.ID, issueNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+
+	// Update fields
+	if req.Title != nil {
+		issue.Title = *req.Title
+	}
+	if req.Body != nil {
+		issue.Body = *req.Body
+	}
+	if req.State != nil {
+		issue.State = *req.State
+		if *req.State == "closed" && issue.ClosedAt == nil {
+			now := time.Now()
+			issue.ClosedAt = &now
+		} else if *req.State == "open" {
+			issue.ClosedAt = nil
+		}
+	}
+	if req.StateReason != nil {
+		issue.StateReason = *req.StateReason
+	}
+
+	if err := p.store.UpdateIssue(issue); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update issue")
+		return
+	}
+
+	issueUser, _ := p.store.GetUserByID(issue.UserID)
+	response := issueToResponse(issue, issueUser, repo)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// issueToResponse converts Issue to GitHub API response format
+func issueToResponse(issue *Issue, user *User, repo *Repository) map[string]interface{} {
+	response := map[string]interface{}{
+		"id":             issue.ID,
+		"number":         issue.Number,
+		"title":          issue.Title,
+		"body":           issue.Body,
+		"state":          issue.State,
+		"locked":         issue.Locked,
+		"comments":       issue.CommentsCount,
+		"created_at":     issue.CreatedAt.Format(time.RFC3339),
+		"updated_at":     issue.UpdatedAt.Format(time.RFC3339),
+		"user": map[string]interface{}{
+			"login": user.Login,
+			"id":    user.ID,
+			"type":  user.Type,
+		},
+		"repository_url": fmt.Sprintf("/repos/%s", repo.FullName),
+	}
+
+	if issue.StateReason != "" {
+		response["state_reason"] = issue.StateReason
+	}
+
+	if issue.ClosedAt != nil {
+		response["closed_at"] = issue.ClosedAt.Format(time.RFC3339)
 	}
 
 	return response
