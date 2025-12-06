@@ -375,7 +375,12 @@ func (s *GitHubStore) ValidateToken(token string) (*User, error) {
 	}
 
 	// Update last_used_at
-	s.db.Exec(`UPDATE github_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE token = ?`, token)
+	_, err = s.db.Exec(`UPDATE github_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE token = ?`, token)
+	if err != nil {
+		// Log but don't fail validation since user was already authenticated
+		// Token tracking is best-effort
+		// TODO: Add proper logging when logger is available
+	}
 
 	return &user, nil
 }

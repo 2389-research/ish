@@ -105,3 +105,12 @@ func TestValidateToken(t *testing.T) {
 		t.Fatal("Expected sql.ErrNoRows for invalid token")
 	}
 }
+
+func TestValidateTokenNilStore(t *testing.T) {
+	plugin := &GitHubPlugin{} // No store set
+
+	valid := plugin.ValidateToken("ghp_anything")
+	if valid {
+		t.Fatal("ValidateToken should return false when store is nil")
+	}
+}

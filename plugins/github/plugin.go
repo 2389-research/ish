@@ -52,6 +52,9 @@ func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 }
 
 func (p *GitHubPlugin) ValidateToken(token string) bool {
+	if p.store == nil {
+		return false
+	}
 	user, err := p.store.ValidateToken(token)
 	return err == nil && user != nil
 }
