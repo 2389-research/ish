@@ -335,3 +335,128 @@ func (s *TwilioStore) ListMessages(accountSid string, limit int) ([]Message, err
 
 	return messages, nil
 }
+
+type Call struct {
+	Sid         string
+	AccountSid  string
+	FromNumber  string
+	ToNumber    string
+	Status      string
+	Direction   string
+	Duration    *int
+	DateCreated time.Time
+	DateUpdated time.Time
+	AnsweredBy  string
+}
+
+func (s *TwilioStore) CreateCall(accountSid, from, to string) (*Call, error) {
+	sid, err := generateSID("CA")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.db.Exec(`
+		INSERT INTO twilio_calls (sid, account_sid, from_number, to_number, status, direction)
+		VALUES (?, ?, ?, ?, 'initiated', 'outbound-api')
+	`, sid, accountSid, from, to)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetCall(sid)
+}
+
+func (s *TwilioStore) GetCall(sid string) (*Call, error) {
+	var call Call
+	var duration sql.NullInt64
+	var answeredBy sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT sid, account_sid, from_number, to_number, status, direction,
+		       duration, date_created, date_updated, answered_by
+		FROM twilio_calls
+		WHERE sid = ?
+	`, sid).Scan(
+		&call.Sid, &call.AccountSid, &call.FromNumber, &call.ToNumber,
+		&call.Status, &call.Direction, &duration, &call.DateCreated,
+		&call.DateUpdated, &answeredBy,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if duration.Valid {
+		dur := int(duration.Int64)
+		call.Duration = &dur
+	}
+
+	if answeredBy.Valid {
+		call.AnsweredBy = answeredBy.String
+	}
+
+	return &call, nil
+}
+
+func (s *TwilioStore) UpdateCallStatus(sid, status string, duration *int) error {
+	if duration != nil {
+		_, err := s.db.Exec(`
+			UPDATE twilio_calls
+			SET status = ?, date_updated = ?, duration = ?
+			WHERE sid = ?
+		`, status, time.Now(), *duration, sid)
+		return err
+	}
+
+	_, err := s.db.Exec(`
+		UPDATE twilio_calls
+		SET status = ?, date_updated = ?
+		WHERE sid = ?
+	`, status, time.Now(), sid)
+	return err
+}
+
+func (s *TwilioStore) ListCalls(accountSid string, limit int) ([]Call, error) {
+	rows, err := s.db.Query(`
+		SELECT sid, account_sid, from_number, to_number, status, direction,
+		       duration, date_created, date_updated, answered_by
+		FROM twilio_calls
+		WHERE account_sid = ?
+		ORDER BY date_created DESC
+		LIMIT ?
+	`, accountSid, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var calls []Call
+	for rows.Next() {
+		var call Call
+		var duration sql.NullInt64
+		var answeredBy sql.NullString
+
+		err := rows.Scan(
+			&call.Sid, &call.AccountSid, &call.FromNumber, &call.ToNumber,
+			&call.Status, &call.Direction, &duration, &call.DateCreated,
+			&call.DateUpdated, &answeredBy,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if duration.Valid {
+			dur := int(duration.Int64)
+			call.Duration = &dur
+		}
+
+		if answeredBy.Valid {
+			call.AnsweredBy = answeredBy.String
+		}
+
+		calls = append(calls, call)
+	}
+
+	return calls, nil
+}

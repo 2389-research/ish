@@ -167,3 +167,38 @@ func TestSendMessageMissingBody(t *testing.T) {
 		t.Fatalf("Expected status 400, got %d", rr.Code)
 	}
 }
+
+func TestInitiateCall(t *testing.T) {
+	plugin, db := setupTestPlugin(t)
+	defer db.Close()
+
+	account, _ := plugin.store.GetOrCreateAccount("AC456")
+
+	form := url.Values{}
+	form.Set("To", "+15551234567")
+	form.Set("From", "+15559876543")
+	form.Set("Url", "http://example.com/twiml")
+
+	req := httptest.NewRequest("POST", "/2010-04-01/Accounts/AC456/Calls.json", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Authorization", basicAuth("AC456", account.AuthToken))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rr := httptest.NewRecorder()
+	handler := plugin.requireAuth(plugin.initiateCall)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("Expected status 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var response map[string]interface{}
+	json.NewDecoder(rr.Body).Decode(&response)
+
+	if !strings.HasPrefix(response["sid"].(string), "CA") {
+		t.Fatalf("Expected SID to start with CA, got %s", response["sid"])
+	}
+
+	if response["status"] != "initiated" {
+		t.Fatalf("Expected status initiated, got %s", response["status"])
+	}
+}

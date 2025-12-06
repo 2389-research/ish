@@ -118,3 +118,95 @@ func writeError(w http.ResponseWriter, statusCode, errorCode int, message string
 		"status":  statusCode,
 	})
 }
+
+func (p *TwilioPlugin) initiateCall(w http.ResponseWriter, r *http.Request) {
+	accountSid := r.Context().Value("account_sid").(string)
+
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter")
+		return
+	}
+
+	to := r.FormValue("To")
+	from := r.FormValue("From")
+	url := r.FormValue("Url")
+
+	if to == "" || from == "" || url == "" {
+		writeError(w, http.StatusBadRequest, 21602, "Missing required parameter To, From, or Url")
+		return
+	}
+
+	call, err := p.store.CreateCall(accountSid, from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 20005, "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(callToResponse(call))
+}
+
+func (p *TwilioPlugin) getCall(w http.ResponseWriter, r *http.Request) {
+	callSid := chi.URLParam(r, "CallSid")
+
+	call, err := p.store.GetCall(callSid)
+	if err != nil {
+		writeError(w, http.StatusNotFound, 20404, "Call not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(callToResponse(call))
+}
+
+func (p *TwilioPlugin) listCalls(w http.ResponseWriter, r *http.Request) {
+	accountSid := r.Context().Value("account_sid").(string)
+
+	pageSize := 50
+	if ps := r.URL.Query().Get("PageSize"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
+			pageSize = parsed
+		}
+	}
+
+	calls, err := p.store.ListCalls(accountSid, pageSize)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 20005, "Internal server error")
+		return
+	}
+
+	responseCalls := make([]map[string]interface{}, len(calls))
+	for i, call := range calls {
+		responseCalls[i] = callToResponse(&call)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"calls":     responseCalls,
+		"page":      0,
+		"page_size": pageSize,
+	})
+}
+
+func callToResponse(call *Call) map[string]interface{} {
+	response := map[string]interface{}{
+		"sid":          call.Sid,
+		"account_sid":  call.AccountSid,
+		"from":         call.FromNumber,
+		"to":           call.ToNumber,
+		"status":       call.Status,
+		"direction":    call.Direction,
+		"date_created": call.DateCreated.Format(time.RFC1123Z),
+		"date_updated": call.DateUpdated.Format(time.RFC1123Z),
+		"answered_by":  call.AnsweredBy,
+	}
+
+	if call.Duration != nil {
+		response["duration"] = strconv.Itoa(*call.Duration)
+	} else {
+		response["duration"] = nil
+	}
+
+	return response
+}

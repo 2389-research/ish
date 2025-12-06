@@ -40,6 +40,13 @@ func (p *TwilioPlugin) RegisterRoutes(r chi.Router) {
 		r.Get("/", p.requireAuth(p.listMessages))
 	})
 	r.Get("/2010-04-01/Accounts/{AccountSid}/Messages/{MessageSid}.json", p.requireAuth(p.getMessage))
+
+	// Voice API
+	r.Route("/2010-04-01/Accounts/{AccountSid}/Calls.json", func(r chi.Router) {
+		r.Post("/", p.requireAuth(p.initiateCall))
+		r.Get("/", p.requireAuth(p.listCalls))
+	})
+	r.Get("/2010-04-01/Accounts/{AccountSid}/Calls/{CallSid}.json", p.requireAuth(p.getCall))
 }
 
 func (p *TwilioPlugin) RegisterAuth(r chi.Router) {
