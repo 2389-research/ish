@@ -41,7 +41,9 @@ func (s *Store) SearchPeople(userID string, query string, pageSize int, pageToke
 
 	if query != "" {
 		sqlQuery += " AND data LIKE ?"
-		args = append(args, "%"+query+"%")
+		escaped := strings.ReplaceAll(query, "%", "\\%")
+		escaped = strings.ReplaceAll(escaped, "_", "\\_")
+		args = append(args, "%"+escaped+"%")
 	}
 
 	sqlQuery += " ORDER BY resource_name ASC LIMIT ? OFFSET ?"
@@ -117,7 +119,9 @@ func (s *Store) ListAllPeople() ([]PersonView, error) {
 			Names          []struct{ DisplayName string } `json:"names"`
 			EmailAddresses []struct{ Value string }       `json:"emailAddresses"`
 		}
-		json.Unmarshal([]byte(data), &d)
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return nil, err
+		}
 		if len(d.Names) > 0 {
 			p.DisplayName = d.Names[0].DisplayName
 		}
@@ -144,7 +148,9 @@ func (s *Store) GetPersonView(userID, resourceName string) (*PersonView, error) 
 		Names          []struct{ DisplayName string } `json:"names"`
 		EmailAddresses []struct{ Value string }       `json:"emailAddresses"`
 	}
-	json.Unmarshal([]byte(p.Data), &d)
+	if err := json.Unmarshal([]byte(p.Data), &d); err != nil {
+		return nil, err
+	}
 	if len(d.Names) > 0 {
 		view.DisplayName = d.Names[0].DisplayName
 	}

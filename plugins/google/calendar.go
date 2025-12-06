@@ -5,6 +5,7 @@ package google
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -35,6 +36,11 @@ func (p *GooglePlugin) registerCalendarRoutes(r chi.Router) {
 }
 
 func (p *GooglePlugin) listEvents(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	calendarID := chi.URLParam(r, "calendarId")
 
 	maxResults := 250
@@ -74,7 +80,10 @@ func (p *GooglePlugin) listEvents(w http.ResponseWriter, r *http.Request) {
 	items := make([]map[string]any, len(events))
 	for i, e := range events {
 		var attendees []any
-		json.Unmarshal([]byte(e.Attendees), &attendees)
+		if err := json.Unmarshal([]byte(e.Attendees), &attendees); err != nil {
+			log.Printf("Failed to unmarshal attendees: %v", err)
+			attendees = []any{}
+		}
 
 		item := map[string]any{
 			"id":          e.ID,
@@ -97,8 +106,9 @@ func (p *GooglePlugin) listEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		if e.Recurrence != "" {
 			var recurrence []string
-			json.Unmarshal([]byte(e.Recurrence), &recurrence)
-			if len(recurrence) > 0 {
+			if err := json.Unmarshal([]byte(e.Recurrence), &recurrence); err != nil {
+				log.Printf("Failed to unmarshal recurrence: %v", err)
+			} else if len(recurrence) > 0 {
 				item["recurrence"] = recurrence
 			}
 		}
@@ -124,6 +134,11 @@ func (p *GooglePlugin) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) getEvent(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	calendarID := chi.URLParam(r, "calendarId")
 	eventID := chi.URLParam(r, "eventId")
 
@@ -134,7 +149,10 @@ func (p *GooglePlugin) getEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var attendees []any
-	json.Unmarshal([]byte(evt.Attendees), &attendees)
+	if err := json.Unmarshal([]byte(evt.Attendees), &attendees); err != nil {
+		log.Printf("Failed to unmarshal attendees: %v", err)
+		attendees = []any{}
+	}
 
 	resp := map[string]any{
 		"kind":        "calendar#event",
@@ -158,8 +176,9 @@ func (p *GooglePlugin) getEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if evt.Recurrence != "" {
 		var recurrence []string
-		json.Unmarshal([]byte(evt.Recurrence), &recurrence)
-		if len(recurrence) > 0 {
+		if err := json.Unmarshal([]byte(evt.Recurrence), &recurrence); err != nil {
+			log.Printf("Failed to unmarshal recurrence: %v", err)
+		} else if len(recurrence) > 0 {
 			resp["recurrence"] = recurrence
 		}
 	}
@@ -238,7 +257,10 @@ func (p *GooglePlugin) createEvent(w http.ResponseWriter, r *http.Request) {
 
 	// Parse attendees back to array
 	var attendees []any
-	json.Unmarshal([]byte(event.Attendees), &attendees)
+	if err := json.Unmarshal([]byte(event.Attendees), &attendees); err != nil {
+		log.Printf("Failed to unmarshal attendees: %v", err)
+		attendees = []any{}
+	}
 
 	resp := map[string]any{
 		"kind":        "calendar#event",
@@ -257,8 +279,9 @@ func (p *GooglePlugin) createEvent(w http.ResponseWriter, r *http.Request) {
 
 	if event.Recurrence != "" {
 		var recurrence []string
-		json.Unmarshal([]byte(event.Recurrence), &recurrence)
-		if len(recurrence) > 0 {
+		if err := json.Unmarshal([]byte(event.Recurrence), &recurrence); err != nil {
+			log.Printf("Failed to unmarshal recurrence: %v", err)
+		} else if len(recurrence) > 0 {
 			resp["recurrence"] = recurrence
 		}
 	}
@@ -268,6 +291,11 @@ func (p *GooglePlugin) createEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) updateEvent(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	calendarID := chi.URLParam(r, "calendarId")
 	eventID := chi.URLParam(r, "eventId")
 
@@ -342,7 +370,10 @@ func (p *GooglePlugin) updateEvent(w http.ResponseWriter, r *http.Request) {
 
 	// Parse attendees back to array
 	var attendees []any
-	json.Unmarshal([]byte(updated.Attendees), &attendees)
+	if err := json.Unmarshal([]byte(updated.Attendees), &attendees); err != nil {
+		log.Printf("Failed to unmarshal attendees: %v", err)
+		attendees = []any{}
+	}
 
 	resp := map[string]any{
 		"kind":        "calendar#event",
@@ -360,8 +391,9 @@ func (p *GooglePlugin) updateEvent(w http.ResponseWriter, r *http.Request) {
 
 	if updated.Recurrence != "" {
 		var recurrence []string
-		json.Unmarshal([]byte(updated.Recurrence), &recurrence)
-		if len(recurrence) > 0 {
+		if err := json.Unmarshal([]byte(updated.Recurrence), &recurrence); err != nil {
+			log.Printf("Failed to unmarshal recurrence: %v", err)
+		} else if len(recurrence) > 0 {
 			resp["recurrence"] = recurrence
 		}
 	}
@@ -370,6 +402,11 @@ func (p *GooglePlugin) updateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) deleteEvent(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	calendarID := chi.URLParam(r, "calendarId")
 	eventID := chi.URLParam(r, "eventId")
 

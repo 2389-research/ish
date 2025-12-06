@@ -44,6 +44,11 @@ func (p *GooglePlugin) listTaskLists(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) listTasks(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	listID := chi.URLParam(r, "tasklist")
 
 	showCompleted := true
@@ -97,6 +102,11 @@ func (p *GooglePlugin) listTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) createTask(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	listID := chi.URLParam(r, "tasklist")
 
 	var req struct {
@@ -149,6 +159,11 @@ func (p *GooglePlugin) createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) getTask(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	listID := chi.URLParam(r, "tasklist")
 	taskID := chi.URLParam(r, "task")
 
@@ -180,6 +195,11 @@ func (p *GooglePlugin) getTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) updateTask(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	listID := chi.URLParam(r, "tasklist")
 	taskID := chi.URLParam(r, "task")
 
@@ -250,6 +270,11 @@ func (p *GooglePlugin) updateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) deleteTask(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	listID := chi.URLParam(r, "tasklist")
 	taskID := chi.URLParam(r, "task")
 

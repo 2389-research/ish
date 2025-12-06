@@ -5,6 +5,7 @@ package google
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,11 @@ func (p *GooglePlugin) registerPeopleRoutes(r chi.Router) {
 }
 
 func (p *GooglePlugin) listConnections(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := auth.UserFromContext(r.Context())
 
 	pageSize := 100
@@ -44,7 +50,10 @@ func (p *GooglePlugin) listConnections(w http.ResponseWriter, r *http.Request) {
 	connections := make([]map[string]any, len(people))
 	for i, person := range people {
 		var data map[string]any
-		json.Unmarshal([]byte(person.Data), &data)
+		if err := json.Unmarshal([]byte(person.Data), &data); err != nil {
+			log.Printf("Failed to unmarshal person data: %v", err)
+			data = map[string]any{}
+		}
 
 		personMap := map[string]any{
 			"resourceName": person.ResourceName,
@@ -72,6 +81,11 @@ func (p *GooglePlugin) listConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) searchContacts(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := auth.UserFromContext(r.Context())
 	query := r.URL.Query().Get("query")
 
@@ -93,7 +107,10 @@ func (p *GooglePlugin) searchContacts(w http.ResponseWriter, r *http.Request) {
 	results := make([]map[string]any, len(people))
 	for i, person := range people {
 		var data map[string]any
-		json.Unmarshal([]byte(person.Data), &data)
+		if err := json.Unmarshal([]byte(person.Data), &data); err != nil {
+			log.Printf("Failed to unmarshal person data: %v", err)
+			data = map[string]any{}
+		}
 
 		personMap := map[string]any{
 			"resourceName": person.ResourceName,
@@ -119,6 +136,11 @@ func (p *GooglePlugin) searchContacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) getPerson(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := auth.UserFromContext(r.Context())
 	resourceID := chi.URLParam(r, "resourceId")
 	resourceName := "people/" + resourceID
@@ -135,7 +157,10 @@ func (p *GooglePlugin) getPerson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var data map[string]any
-	json.Unmarshal([]byte(person.Data), &data)
+	if err := json.Unmarshal([]byte(person.Data), &data); err != nil {
+		log.Printf("Failed to unmarshal person data: %v", err)
+		data = map[string]any{}
+	}
 
 	resp := map[string]any{
 		"resourceName": person.ResourceName,

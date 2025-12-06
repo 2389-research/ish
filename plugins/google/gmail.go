@@ -6,6 +6,7 @@ package google
 import (
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,6 +28,11 @@ func (p *GooglePlugin) registerGmailRoutes(r chi.Router) {
 }
 
 func (p *GooglePlugin) listMessages(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := chi.URLParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
@@ -68,6 +74,11 @@ func (p *GooglePlugin) listMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) getMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := chi.URLParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
@@ -82,7 +93,10 @@ func (p *GooglePlugin) getMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Parse payload JSON
 	var payload map[string]any
-	json.Unmarshal([]byte(msg.Payload), &payload)
+	if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
+		writeError(w, 500, "Failed to parse message payload", "INTERNAL")
+		return
+	}
 
 	resp := map[string]any{
 		"id":           msg.ID,
@@ -97,6 +111,11 @@ func (p *GooglePlugin) getMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) getProfile(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := chi.URLParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
@@ -119,6 +138,11 @@ func (p *GooglePlugin) getProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) getAttachment(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := chi.URLParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
@@ -142,6 +166,11 @@ func (p *GooglePlugin) getAttachment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) listHistory(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := chi.URLParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
@@ -199,6 +228,11 @@ func (p *GooglePlugin) listHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
 	userID := chi.URLParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
@@ -294,17 +328,21 @@ func parseEmail(email string) (map[string]string, string) {
 
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("Failed to encode JSON response: %v", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, code int, message, status string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]any{
 			"code":    code,
 			"message": message,
 			"status":  status,
 		},
-	})
+	}); err != nil {
+		log.Printf("Failed to encode error response: %v", err)
+	}
 }

@@ -5,6 +5,7 @@ package admin
 
 import (
 	"fmt"
+	"html"
 	"html/template"
 	"net/http"
 	"strings"
@@ -226,39 +227,42 @@ func renderPluginPage(w http.ResponseWriter, templateName string, data interface
 	switch templateName {
 	case "plugin-list":
 		d := data.(pluginListData)
-		html := fmt.Sprintf(`<!DOCTYPE html>
+		htmlStr := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><title>%s - %s</title></head>
 <body>
 <h1>%s - %s</h1>
 %s
 </body>
-</html>`, d.PluginName, d.ResourceName, d.PluginName, d.ResourceName, d.ListHTML)
-		w.Write([]byte(html))
+</html>`, html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName),
+			html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName), d.ListHTML)
+		w.Write([]byte(htmlStr))
 
 	case "plugin-form":
 		d := data.(pluginFormData)
-		html := fmt.Sprintf(`<!DOCTYPE html>
+		htmlStr := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><title>%s - %s</title></head>
 <body>
 <h1>%s - %s</h1>
 %s
 </body>
-</html>`, d.PluginName, d.ResourceName, d.PluginName, d.ResourceName, d.FormHTML)
-		w.Write([]byte(html))
+</html>`, html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName),
+			html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName), d.FormHTML)
+		w.Write([]byte(htmlStr))
 
 	case "plugin-detail":
 		d := data.(pluginDetailData)
-		html := fmt.Sprintf(`<!DOCTYPE html>
+		htmlStr := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><title>%s - %s</title></head>
 <body>
 <h1>%s - %s</h1>
 %s
 </body>
-</html>`, d.PluginName, d.ResourceName, d.PluginName, d.ResourceName, d.DetailHTML)
-		w.Write([]byte(html))
+</html>`, html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName),
+			html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName), d.DetailHTML)
+		w.Write([]byte(htmlStr))
 	}
 	return nil
 }

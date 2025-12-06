@@ -117,7 +117,9 @@ func (p *OAuthPlugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // handleRevoke handles POST /oauth/{plugin}/revoke
@@ -153,12 +155,16 @@ func (p *OAuthPlugin) handleRevoke(w http.ResponseWriter, r *http.Request) {
 
 	// Return success
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	if err := json.NewEncoder(w).Encode(map[string]bool{"success": true}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // generateRandomToken generates a random token with a prefix
 func generateRandomToken(prefix string) string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("failed to generate random token: %v", err))
+	}
 	return fmt.Sprintf("%s_%s", prefix, hex.EncodeToString(b))
 }
