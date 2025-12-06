@@ -4,7 +4,10 @@
 package discord
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
+	"fmt"
 	"time"
 )
 
@@ -96,4 +99,77 @@ type WebhookMessage struct {
 	UpdatedAt   time.Time
 	EditedAt    *time.Time
 	DeletedAt   *time.Time
+}
+
+// generateSnowflake creates a Discord-like snowflake ID (simplified)
+func generateSnowflake() string {
+	var n uint64
+	binary.Read(rand.Reader, binary.BigEndian, &n)
+	return fmt.Sprintf("%d", n)
+}
+
+// GetOrCreateWebhook retrieves or creates a webhook (auto-accept pattern)
+func (s *DiscordStore) GetOrCreateWebhook(id, token string) (*Webhook, error) {
+	// Try to get existing
+	webhook, err := s.GetWebhook(id, token)
+	if err == nil {
+		return webhook, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	// Create new webhook
+	webhook = &Webhook{
+		ID:        id,
+		Token:     token,
+		Type:      1,
+		Name:      "Incoming Webhook",
+		ChannelID: generateSnowflake(),
+		GuildID:   generateSnowflake(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	query := `INSERT INTO discord_webhooks (id, token, type, name, channel_id, guild_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err = s.db.Exec(query, webhook.ID, webhook.Token, webhook.Type, webhook.Name, webhook.ChannelID, webhook.GuildID, webhook.CreatedAt, webhook.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return webhook, nil
+}
+
+func (s *DiscordStore) GetWebhook(id, token string) (*Webhook, error) {
+	query := `SELECT id, token, type, name, avatar, channel_id, guild_id, application_id, created_at, updated_at, deleted_at
+		FROM discord_webhooks WHERE id = ? AND token = ? AND deleted_at IS NULL`
+
+	webhook := &Webhook{}
+	var deletedAt sql.NullTime
+	err := s.db.QueryRow(query, id, token).Scan(
+		&webhook.ID, &webhook.Token, &webhook.Type, &webhook.Name, &webhook.Avatar,
+		&webhook.ChannelID, &webhook.GuildID, &webhook.ApplicationID,
+		&webhook.CreatedAt, &webhook.UpdatedAt, &deletedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if deletedAt.Valid {
+		webhook.DeletedAt = &deletedAt.Time
+	}
+	return webhook, nil
+}
+
+func (s *DiscordStore) UpdateWebhook(webhook *Webhook) error {
+	query := `UPDATE discord_webhooks SET name = ?, avatar = ?, updated_at = ? WHERE id = ? AND token = ?`
+	webhook.UpdatedAt = time.Now()
+	_, err := s.db.Exec(query, webhook.Name, webhook.Avatar, webhook.UpdatedAt, webhook.ID, webhook.Token)
+	return err
+}
+
+func (s *DiscordStore) DeleteWebhook(id, token string) error {
+	query := `UPDATE discord_webhooks SET deleted_at = ? WHERE id = ? AND token = ?`
+	_, err := s.db.Exec(query, time.Now(), id, token)
+	return err
 }
