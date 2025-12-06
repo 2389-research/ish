@@ -6,7 +6,7 @@ package github
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"encoding/json"
 	"net/http"
 
 	"github.com/2389/ish/plugins/core"
@@ -66,7 +66,7 @@ func (p *GitHubPlugin) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, `{"message": "%s"}`, message)
+	json.NewEncoder(w).Encode(map[string]string{"message": message})
 }
 
 type GitHubPlugin struct {
