@@ -5,6 +5,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -27,6 +28,12 @@ type Plugin interface {
 
 	// Token Validation
 	ValidateToken(token string) bool
+}
+
+// DatabasePlugin is implemented by plugins that need direct database access
+type DatabasePlugin interface {
+	Plugin
+	SetDB(db *sql.DB) error
 }
 
 // HealthStatus represents plugin health
