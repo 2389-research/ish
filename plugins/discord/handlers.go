@@ -173,3 +173,91 @@ func (p *DiscordPlugin) deleteWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// getWebhookMessage handles GET /api/webhooks/{webhook.id}/{webhook.token}/messages/{message.id}
+func (p *DiscordPlugin) getWebhookMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized")
+		return
+	}
+
+	webhookID := chi.URLParam(r, "webhookID")
+	messageID := chi.URLParam(r, "messageID")
+
+	msg, err := p.store.GetMessage(webhookID, messageID)
+	if err != nil {
+		writeError(w, 404, "Message not found")
+		return
+	}
+
+	writeJSON(w, msg)
+}
+
+// editWebhookMessage handles PATCH /api/webhooks/{webhook.id}/{webhook.token}/messages/{message.id}
+func (p *DiscordPlugin) editWebhookMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized")
+		return
+	}
+
+	webhookID := chi.URLParam(r, "webhookID")
+	messageID := chi.URLParam(r, "messageID")
+
+	msg, err := p.store.GetMessage(webhookID, messageID)
+	if err != nil {
+		writeError(w, 404, "Message not found")
+		return
+	}
+
+	var req struct {
+		Content     *string                  `json:"content"`
+		Embeds      []map[string]interface{} `json:"embeds"`
+		Components  []map[string]interface{} `json:"components"`
+		Attachments []map[string]interface{} `json:"attachments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "Invalid request body")
+		return
+	}
+
+	if req.Content != nil {
+		msg.Content = *req.Content
+	}
+	if len(req.Embeds) > 0 {
+		embedsJSON, _ := json.Marshal(req.Embeds)
+		msg.Embeds = string(embedsJSON)
+	}
+	if len(req.Components) > 0 {
+		componentsJSON, _ := json.Marshal(req.Components)
+		msg.Components = string(componentsJSON)
+	}
+	if len(req.Attachments) > 0 {
+		attachmentsJSON, _ := json.Marshal(req.Attachments)
+		msg.Attachments = string(attachmentsJSON)
+	}
+
+	if err := p.store.UpdateMessage(msg); err != nil {
+		writeError(w, 500, "Failed to update message")
+		return
+	}
+
+	writeJSON(w, msg)
+}
+
+// deleteWebhookMessage handles DELETE /api/webhooks/{webhook.id}/{webhook.token}/messages/{message.id}
+func (p *DiscordPlugin) deleteWebhookMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized")
+		return
+	}
+
+	webhookID := chi.URLParam(r, "webhookID")
+	messageID := chi.URLParam(r, "messageID")
+
+	if err := p.store.DeleteMessage(webhookID, messageID); err != nil {
+		writeError(w, 500, "Failed to delete message")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
