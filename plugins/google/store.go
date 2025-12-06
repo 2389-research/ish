@@ -92,6 +92,25 @@ func (s *GoogleStore) initTables() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_calendar_events_calendar_id ON calendar_events(calendar_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_calendar_events_start_time ON calendar_events(start_time)`,
+
+		// People tables
+		`CREATE TABLE IF NOT EXISTS people (
+			resource_name TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			data TEXT,
+			updated_at TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_people_user_id ON people(user_id)`,
+
+		`CREATE TABLE IF NOT EXISTS sync_tokens (
+			id TEXT PRIMARY KEY,
+			resource_type TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			token TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sync_tokens_resource_user ON sync_tokens(resource_type, user_id)`,
 	}
 
 	for _, query := range queries {
@@ -860,4 +879,299 @@ func (s *GoogleStore) ListCalendarEventsSince(calendarID string, syncToken strin
 	// Generate new sync token based on current time
 	newToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
 	return events, newToken, nil
+}
+
+// People types and methods
+
+type Person struct {
+	ResourceName string
+	UserID       string
+	Data         string
+}
+
+type PersonView struct {
+	ID           string
+	ResourceName string
+	DisplayName  string
+	Email        string
+}
+
+func (s *GoogleStore) CreatePerson(p *Person) error {
+	_, err := s.db.Exec(
+		"INSERT INTO people (resource_name, user_id, data) VALUES (?, ?, ?)",
+		p.ResourceName, p.UserID, p.Data,
+	)
+	return err
+}
+
+func (s *GoogleStore) SearchPeople(userID string, query string, pageSize int, pageToken string) ([]Person, string, error) {
+	offset := 0
+	if pageToken != "" {
+		decoded, err := base64.StdEncoding.DecodeString(pageToken)
+		if err == nil {
+			offset, _ = strconv.Atoi(string(decoded))
+		}
+	}
+
+	sqlQuery := "SELECT resource_name, user_id, data FROM people WHERE user_id = ?"
+	args := []any{userID}
+
+	if query != "" {
+		sqlQuery += " AND data LIKE ? ESCAPE '\\'"
+		escaped := strings.ReplaceAll(query, "%", "\\%")
+		escaped = strings.ReplaceAll(escaped, "_", "\\_")
+		args = append(args, "%"+escaped+"%")
+	}
+
+	sqlQuery += " ORDER BY resource_name ASC LIMIT ? OFFSET ?"
+	args = append(args, pageSize+1, offset)
+
+	rows, err := s.db.Query(sqlQuery, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var people []Person
+	for rows.Next() {
+		var p Person
+		err := rows.Scan(&p.ResourceName, &p.UserID, &p.Data)
+		if err != nil {
+			return nil, "", err
+		}
+		people = append(people, p)
+	}
+
+	var nextToken string
+	if len(people) > pageSize {
+		people = people[:pageSize]
+		nextToken = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(offset + pageSize)))
+	}
+
+	return people, nextToken, nil
+}
+
+func (s *GoogleStore) GetPerson(userID, resourceName string) (*Person, error) {
+	var p Person
+	err := s.db.QueryRow(
+		"SELECT resource_name, user_id, data FROM people WHERE user_id = ? AND resource_name = ?",
+		userID, resourceName,
+	).Scan(&p.ResourceName, &p.UserID, &p.Data)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("person not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *GoogleStore) ListAllPeople() ([]PersonView, error) {
+	rows, err := s.db.Query("SELECT resource_name, data FROM people ORDER BY resource_name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var people []PersonView
+	for rows.Next() {
+		var p PersonView
+		var data string
+		if err := rows.Scan(&p.ResourceName, &data); err != nil {
+			return nil, err
+		}
+
+		// Extract ID from resource_name (people/c123 -> c123)
+		p.ID = strings.TrimPrefix(p.ResourceName, "people/")
+
+		// Parse data JSON
+		var d struct {
+			Names          []struct{ DisplayName string } `json:"names"`
+			EmailAddresses []struct{ Value string }       `json:"emailAddresses"`
+		}
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return nil, err
+		}
+		if len(d.Names) > 0 {
+			p.DisplayName = d.Names[0].DisplayName
+		}
+		if len(d.EmailAddresses) > 0 {
+			p.Email = d.EmailAddresses[0].Value
+		}
+		people = append(people, p)
+	}
+	return people, nil
+}
+
+func (s *GoogleStore) GetPersonView(userID, resourceName string) (*PersonView, error) {
+	p, err := s.GetPerson(userID, resourceName)
+	if err != nil {
+		return nil, err
+	}
+
+	view := &PersonView{
+		ID:           strings.TrimPrefix(p.ResourceName, "people/"),
+		ResourceName: p.ResourceName,
+	}
+
+	var d struct {
+		Names          []struct{ DisplayName string } `json:"names"`
+		EmailAddresses []struct{ Value string }       `json:"emailAddresses"`
+	}
+	if err := json.Unmarshal([]byte(p.Data), &d); err != nil {
+		return nil, err
+	}
+	if len(d.Names) > 0 {
+		view.DisplayName = d.Names[0].DisplayName
+	}
+	if len(d.EmailAddresses) > 0 {
+		view.Email = d.EmailAddresses[0].Value
+	}
+
+	return view, nil
+}
+
+func (s *GoogleStore) CreatePersonFromForm(userID, name, email string) (*PersonView, error) {
+	id := fmt.Sprintf("c%d", time.Now().UnixNano())
+	resourceName := "people/" + id
+
+	// Build data using json.Marshal to properly escape special characters
+	personData := map[string]any{
+		"names":          []map[string]string{{"displayName": name}},
+		"emailAddresses": []map[string]string{{"value": email}},
+	}
+	dataBytes, _ := json.Marshal(personData)
+
+	_, err := s.db.Exec(
+		"INSERT INTO people (resource_name, user_id, data) VALUES (?, ?, ?)",
+		resourceName, userID, string(dataBytes),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PersonView{
+		ID:           id,
+		ResourceName: resourceName,
+		DisplayName:  name,
+		Email:        email,
+	}, nil
+}
+
+func (s *GoogleStore) DeletePerson(id string) error {
+	resourceName := "people/" + id
+	_, err := s.db.Exec("DELETE FROM people WHERE resource_name = ?", resourceName)
+	return err
+}
+
+// GetPeopleSyncToken returns the current sync token for a user's contacts.
+func (s *GoogleStore) GetPeopleSyncToken(userID string) (string, error) {
+	var token string
+	err := s.db.QueryRow("SELECT token FROM sync_tokens WHERE resource_type = 'people' AND user_id = ?", userID).Scan(&token)
+	if err == sql.ErrNoRows {
+		// Generate new sync token if none exists
+		token = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+		s.db.Exec("INSERT INTO sync_tokens (id, resource_type, user_id, token) VALUES (?, 'people', ?, ?)",
+			fmt.Sprintf("sync_people_%s", userID), userID, token)
+	} else if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// UpdatePeopleSyncToken updates the sync token for a user's contacts.
+func (s *GoogleStore) UpdatePeopleSyncToken(userID string) (string, error) {
+	token := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	_, err := s.db.Exec("UPDATE sync_tokens SET token = ? WHERE resource_type = 'people' AND user_id = ?", token, userID)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// ListPeopleSince returns people updated since the given sync token.
+func (s *GoogleStore) ListPeopleSince(userID string, syncToken string, pageSize int) ([]Person, string, error) {
+	// Decode the sync token to get a timestamp
+	var sinceTime int64
+	if syncToken != "" {
+		decoded, err := base64.StdEncoding.DecodeString(syncToken)
+		if err == nil {
+			sinceTime, _ = strconv.ParseInt(string(decoded), 10, 64)
+		}
+	}
+
+	// Convert nanoseconds to timestamp for comparison
+	sinceTimestamp := time.Unix(0, sinceTime).Format(time.RFC3339)
+
+	// Use COALESCE to handle NULL updated_at values (treat them as epoch 0)
+	sqlQuery := `SELECT resource_name, user_id, data FROM people
+		WHERE user_id = ? AND COALESCE(updated_at, '1970-01-01T00:00:00Z') > ? ORDER BY updated_at ASC LIMIT ?`
+
+	rows, err := s.db.Query(sqlQuery, userID, sinceTimestamp, pageSize)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var people []Person
+	for rows.Next() {
+		var p Person
+		if err := rows.Scan(&p.ResourceName, &p.UserID, &p.Data); err != nil {
+			return nil, "", err
+		}
+		people = append(people, p)
+	}
+
+	// Generate new sync token based on current time
+	newToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	return people, newToken, nil
+}
+
+// ListPeopleConnections lists people for the connections endpoint with sync token support.
+func (s *GoogleStore) ListPeopleConnections(userID string, pageSize int, pageToken string, syncToken string) ([]Person, string, string, error) {
+	if syncToken != "" {
+		// Incremental sync
+		people, newSyncToken, err := s.ListPeopleSince(userID, syncToken, pageSize)
+		return people, "", newSyncToken, err
+	}
+
+	// Full sync with pagination
+	offset := 0
+	if pageToken != "" {
+		decoded, err := base64.StdEncoding.DecodeString(pageToken)
+		if err == nil {
+			offset, _ = strconv.Atoi(string(decoded))
+		}
+	}
+
+	sqlQuery := "SELECT resource_name, user_id, data FROM people WHERE user_id = ? ORDER BY resource_name ASC LIMIT ? OFFSET ?"
+
+	rows, err := s.db.Query(sqlQuery, userID, pageSize+1, offset)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer rows.Close()
+
+	var people []Person
+	for rows.Next() {
+		var p Person
+		if err := rows.Scan(&p.ResourceName, &p.UserID, &p.Data); err != nil {
+			return nil, "", "", err
+		}
+		people = append(people, p)
+	}
+
+	var nextPageToken string
+	if len(people) > pageSize {
+		people = people[:pageSize]
+		nextPageToken = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(offset + pageSize)))
+	}
+
+	// If no more pages, generate sync token
+	var nextSyncToken string
+	if nextPageToken == "" {
+		nextSyncToken, _ = s.GetPeopleSyncToken(userID)
+	}
+
+	return people, nextPageToken, nextSyncToken, nil
 }
