@@ -32,6 +32,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// GetDB returns the underlying database connection for plugins
+func (s *Store) GetDB() *sql.DB {
+	return s.db
+}
+
 func (s *Store) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
