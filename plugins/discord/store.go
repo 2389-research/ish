@@ -173,3 +173,101 @@ func (s *DiscordStore) DeleteWebhook(id, token string) error {
 	_, err := s.db.Exec(query, time.Now(), id, token)
 	return err
 }
+
+func (s *DiscordStore) CreateMessage(msg *WebhookMessage) error {
+	if msg.ID == "" {
+		msg.ID = generateSnowflake()
+	}
+	msg.CreatedAt = time.Now()
+	msg.UpdatedAt = time.Now()
+
+	query := `INSERT INTO discord_webhook_messages
+		(id, webhook_id, content, username, avatar_url, embeds, components, attachments, thread_id, flags, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := s.db.Exec(query,
+		msg.ID, msg.WebhookID, msg.Content, msg.Username, msg.AvatarURL,
+		msg.Embeds, msg.Components, msg.Attachments, msg.ThreadID, msg.Flags,
+		msg.CreatedAt, msg.UpdatedAt,
+	)
+	return err
+}
+
+func (s *DiscordStore) GetMessage(webhookID, messageID string) (*WebhookMessage, error) {
+	query := `SELECT id, webhook_id, content, username, avatar_url, embeds, components, attachments, thread_id, flags, created_at, updated_at, edited_at, deleted_at
+		FROM discord_webhook_messages WHERE webhook_id = ? AND id = ? AND deleted_at IS NULL`
+
+	msg := &WebhookMessage{}
+	var editedAt, deletedAt sql.NullTime
+	err := s.db.QueryRow(query, webhookID, messageID).Scan(
+		&msg.ID, &msg.WebhookID, &msg.Content, &msg.Username, &msg.AvatarURL,
+		&msg.Embeds, &msg.Components, &msg.Attachments, &msg.ThreadID, &msg.Flags,
+		&msg.CreatedAt, &msg.UpdatedAt, &editedAt, &deletedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if editedAt.Valid {
+		msg.EditedAt = &editedAt.Time
+	}
+	if deletedAt.Valid {
+		msg.DeletedAt = &deletedAt.Time
+	}
+	return msg, nil
+}
+
+func (s *DiscordStore) UpdateMessage(msg *WebhookMessage) error {
+	now := time.Now()
+	msg.UpdatedAt = now
+	msg.EditedAt = &now
+
+	query := `UPDATE discord_webhook_messages
+		SET content = ?, username = ?, avatar_url = ?, embeds = ?, components = ?, attachments = ?, updated_at = ?, edited_at = ?
+		WHERE webhook_id = ? AND id = ?`
+
+	_, err := s.db.Exec(query,
+		msg.Content, msg.Username, msg.AvatarURL, msg.Embeds, msg.Components, msg.Attachments,
+		msg.UpdatedAt, msg.EditedAt, msg.WebhookID, msg.ID,
+	)
+	return err
+}
+
+func (s *DiscordStore) DeleteMessage(webhookID, messageID string) error {
+	query := `UPDATE discord_webhook_messages SET deleted_at = ? WHERE webhook_id = ? AND id = ?`
+	_, err := s.db.Exec(query, time.Now(), webhookID, messageID)
+	return err
+}
+
+func (s *DiscordStore) ListMessages(webhookID string, limit int) ([]*WebhookMessage, error) {
+	query := `SELECT id, webhook_id, content, username, avatar_url, embeds, components, attachments, thread_id, flags, created_at, updated_at, edited_at, deleted_at
+		FROM discord_webhook_messages WHERE webhook_id = ? AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT ?`
+
+	rows, err := s.db.Query(query, webhookID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []*WebhookMessage
+	for rows.Next() {
+		msg := &WebhookMessage{}
+		var editedAt, deletedAt sql.NullTime
+		err := rows.Scan(
+			&msg.ID, &msg.WebhookID, &msg.Content, &msg.Username, &msg.AvatarURL,
+			&msg.Embeds, &msg.Components, &msg.Attachments, &msg.ThreadID, &msg.Flags,
+			&msg.CreatedAt, &msg.UpdatedAt, &editedAt, &deletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if editedAt.Valid {
+			msg.EditedAt = &editedAt.Time
+		}
+		if deletedAt.Valid {
+			msg.DeletedAt = &deletedAt.Time
+		}
+		messages = append(messages, msg)
+	}
+	return messages, rows.Err()
+}
