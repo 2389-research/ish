@@ -32,8 +32,17 @@ func (p *DiscordPlugin) Health() core.HealthStatus {
 }
 
 func (p *DiscordPlugin) RegisterRoutes(r chi.Router) {
-	r.Route("/api/webhooks", func(r chi.Router) {
-		// Endpoints will be added in next tasks
+	r.Route("/api/webhooks/{webhookID}/{webhookToken}", func(r chi.Router) {
+		// Webhook endpoints
+		r.Post("/", p.executeWebhook)
+		r.Get("/", p.getWebhook)
+		r.Patch("/", p.modifyWebhook)
+		r.Delete("/", p.deleteWebhook)
+
+		// Message endpoints
+		r.Get("/messages/{messageID}", p.getWebhookMessage)
+		r.Patch("/messages/{messageID}", p.editWebhookMessage)
+		r.Delete("/messages/{messageID}", p.deleteWebhookMessage)
 	})
 }
 
