@@ -36,7 +36,7 @@ func TestStore_CalendarEvents(t *testing.T) {
 		EndTime:     "2025-12-01T11:00:00Z",
 		Attendees:   `[{"email":"harper@example.com"}]`,
 	}
-	err = s.CreateCalendarEvent(evt)
+	_, err = s.CreateCalendarEvent(evt)
 	if err != nil {
 		t.Fatalf("CreateCalendarEvent() error = %v", err)
 	}
