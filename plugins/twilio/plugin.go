@@ -56,10 +56,6 @@ func (p *TwilioPlugin) RegisterAuth(r chi.Router) {
 	// Twilio uses HTTP Basic Auth, handled per-request
 }
 
-func (p *TwilioPlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {
-	// Seeding will be added in Task 6
-	return core.SeedData{}, nil
-}
 
 // extractBasicAuth extracts username and password from HTTP Basic Auth header
 func extractBasicAuth(authHeader string) (username, password string, ok bool) {
