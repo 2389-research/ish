@@ -152,17 +152,104 @@ func (p *GitHubPlugin) RegisterAuth(r chi.Router) {
 }
 
 func (p *GitHubPlugin) Schema() core.PluginSchema {
-	// Will implement in later tasks
-	return core.PluginSchema{}
+	return core.PluginSchema{
+		Resources: []core.ResourceSchema{
+			{
+				Name:        "Users",
+				Slug:        "users",
+				ListColumns: []string{"id", "login", "name", "type", "repos_count"},
+				Fields: []core.FieldSchema{
+					{Name: "id", Type: "string", Display: "ID", Required: true, Editable: false},
+					{Name: "login", Type: "string", Display: "Login", Required: true, Editable: false},
+					{Name: "name", Type: "string", Display: "Name", Required: false, Editable: false},
+					{Name: "email", Type: "string", Display: "Email", Required: false, Editable: false},
+					{Name: "avatar_url", Type: "string", Display: "Avatar URL", Required: false, Editable: false},
+					{Name: "type", Type: "string", Display: "Type", Required: false, Editable: false},
+					{Name: "repos_count", Type: "string", Display: "Repositories", Required: false, Editable: false},
+					{Name: "created_at", Type: "datetime", Display: "Created", Required: false, Editable: false},
+				},
+				Actions: []core.ActionSchema{},
+			},
+			{
+				Name:        "Repositories",
+				Slug:        "repositories",
+				ListColumns: []string{"id", "full_name", "owner", "private", "stars", "issues_count"},
+				Fields: []core.FieldSchema{
+					{Name: "id", Type: "string", Display: "ID", Required: true, Editable: false},
+					{Name: "name", Type: "string", Display: "Name", Required: true, Editable: false},
+					{Name: "full_name", Type: "string", Display: "Full Name", Required: true, Editable: false},
+					{Name: "owner", Type: "string", Display: "Owner", Required: true, Editable: false},
+					{Name: "description", Type: "text", Display: "Description", Required: false, Editable: false},
+					{Name: "private", Type: "string", Display: "Private", Required: false, Editable: false},
+					{Name: "default_branch", Type: "string", Display: "Default Branch", Required: false, Editable: false},
+					{Name: "stars", Type: "string", Display: "Stars", Required: false, Editable: false},
+					{Name: "forks", Type: "string", Display: "Forks", Required: false, Editable: false},
+					{Name: "issues_count", Type: "string", Display: "Open Issues", Required: false, Editable: false},
+					{Name: "created_at", Type: "datetime", Display: "Created", Required: false, Editable: false},
+				},
+				Actions: []core.ActionSchema{},
+			},
+			{
+				Name:        "Issues",
+				Slug:        "issues",
+				ListColumns: []string{"id", "repo", "number", "title", "state", "created_at"},
+				Fields: []core.FieldSchema{
+					{Name: "id", Type: "string", Display: "ID", Required: true, Editable: false},
+					{Name: "repo", Type: "string", Display: "Repository", Required: true, Editable: false},
+					{Name: "number", Type: "string", Display: "Number", Required: true, Editable: false},
+					{Name: "title", Type: "string", Display: "Title", Required: true, Editable: false},
+					{Name: "body", Type: "text", Display: "Body", Required: false, Editable: false},
+					{Name: "state", Type: "string", Display: "State", Required: true, Editable: false},
+					{Name: "state_reason", Type: "string", Display: "State Reason", Required: false, Editable: false},
+					{Name: "user", Type: "string", Display: "Author", Required: false, Editable: false},
+					{Name: "comments_count", Type: "string", Display: "Comments", Required: false, Editable: false},
+					{Name: "created_at", Type: "datetime", Display: "Created", Required: false, Editable: false},
+					{Name: "closed_at", Type: "datetime", Display: "Closed", Required: false, Editable: false},
+				},
+				Actions: []core.ActionSchema{},
+			},
+			{
+				Name:        "Pull Requests",
+				Slug:        "pull_requests",
+				ListColumns: []string{"id", "repo", "number", "title", "state", "merged"},
+				Fields: []core.FieldSchema{
+					{Name: "id", Type: "string", Display: "ID", Required: true, Editable: false},
+					{Name: "repo", Type: "string", Display: "Repository", Required: true, Editable: false},
+					{Name: "number", Type: "string", Display: "Number", Required: true, Editable: false},
+					{Name: "title", Type: "string", Display: "Title", Required: true, Editable: false},
+					{Name: "body", Type: "text", Display: "Body", Required: false, Editable: false},
+					{Name: "state", Type: "string", Display: "State", Required: true, Editable: false},
+					{Name: "merged", Type: "string", Display: "Merged", Required: false, Editable: false},
+					{Name: "draft", Type: "string", Display: "Draft", Required: false, Editable: false},
+					{Name: "head_ref", Type: "string", Display: "Head Branch", Required: false, Editable: false},
+					{Name: "base_ref", Type: "string", Display: "Base Branch", Required: false, Editable: false},
+					{Name: "user", Type: "string", Display: "Author", Required: false, Editable: false},
+					{Name: "merged_at", Type: "datetime", Display: "Merged", Required: false, Editable: false},
+					{Name: "created_at", Type: "datetime", Display: "Created", Required: false, Editable: false},
+				},
+				Actions: []core.ActionSchema{},
+			},
+			{
+				Name:        "Webhooks",
+				Slug:        "webhooks",
+				ListColumns: []string{"id", "repo", "url", "events", "active"},
+				Fields: []core.FieldSchema{
+					{Name: "id", Type: "string", Display: "ID", Required: true, Editable: false},
+					{Name: "repo", Type: "string", Display: "Repository", Required: true, Editable: false},
+					{Name: "url", Type: "string", Display: "URL", Required: true, Editable: false},
+					{Name: "content_type", Type: "string", Display: "Content Type", Required: false, Editable: false},
+					{Name: "events", Type: "text", Display: "Events", Required: false, Editable: false},
+					{Name: "active", Type: "string", Display: "Active", Required: false, Editable: false},
+					{Name: "created_at", Type: "datetime", Display: "Created", Required: false, Editable: false},
+					{Name: "updated_at", Type: "datetime", Display: "Updated", Required: false, Editable: false},
+				},
+				Actions: []core.ActionSchema{},
+			},
+		},
+	}
 }
 
-func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {
-	// Will implement in later tasks
-	return core.SeedData{
-		Summary: "GitHub plugin seeding not implemented",
-		Records: map[string]int{},
-	}, nil
-}
+// Seed is implemented in seed.go
 
 func (p *GitHubPlugin) ValidateToken(token string) bool {
 	if p.store == nil {
