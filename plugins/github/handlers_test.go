@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -708,5 +709,277 @@ func TestDeleteComment(t *testing.T) {
 	_, err := store.GetComment(comment.ID)
 	if err == nil {
 		t.Fatal("Expected error getting deleted comment")
+	}
+}
+
+func TestCreateReview(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and PR
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _, _ := store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+
+	// Test creating PENDING review
+	body := `{"state": "PENDING", "body": "Reviewing this PR"}`
+	req := httptest.NewRequest("POST", "/repos/alice/test-repo/pulls/1/reviews", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.createReview)
+	handler(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["state"] != "PENDING" {
+		t.Fatalf("Expected state 'PENDING', got %v", resp["state"])
+	}
+	if resp["body"] != "Reviewing this PR" {
+		t.Fatalf("Expected body 'Reviewing this PR', got %v", resp["body"])
+	}
+	if resp["user"].(map[string]interface{})["login"] != "alice" {
+		t.Fatalf("Expected user 'alice', got %v", resp["user"])
+	}
+	// PENDING review should not have submitted_at
+	if _, exists := resp["submitted_at"]; exists {
+		t.Fatal("PENDING review should not have submitted_at")
+	}
+
+	// Verify in database
+	reviews, _ := store.ListReviews(issue.ID)
+	if len(reviews) != 1 {
+		t.Fatalf("Expected 1 review in database, got %d", len(reviews))
+	}
+	if reviews[0].State != "PENDING" {
+		t.Fatalf("Expected state 'PENDING', got '%s'", reviews[0].State)
+	}
+}
+
+func TestCreateReviewWithDifferentStates(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and PR
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _, _ := store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+
+	states := []string{"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
+
+	for i, state := range states {
+		body := fmt.Sprintf(`{"state": "%s", "body": "Review %d"}`, state, i+1)
+		req := httptest.NewRequest("POST", "/repos/alice/test-repo/pulls/1/reviews", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer ghp_test")
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		// Setup chi context
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("owner", "alice")
+		rctx.URLParams.Add("repo", "test-repo")
+		rctx.URLParams.Add("number", "1")
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+		handler := plugin.requireAuth(plugin.createReview)
+		handler(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Expected 201 for state %s, got %d: %s", state, w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+
+		if resp["state"] != state {
+			t.Fatalf("Expected state '%s', got %v", state, resp["state"])
+		}
+	}
+
+	// Verify all reviews in database
+	reviews, _ := store.ListReviews(issue.ID)
+	if len(reviews) != 3 {
+		t.Fatalf("Expected 3 reviews in database, got %d", len(reviews))
+	}
+}
+
+func TestListReviews(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, PR, and reviews
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _, _ := store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+
+	store.CreateReview(issue.ID, user.ID, "PENDING", "First review")
+	store.CreateReview(issue.ID, user.ID, "APPROVED", "LGTM")
+	store.CreateReview(issue.ID, user.ID, "CHANGES_REQUESTED", "Needs work")
+
+	req := httptest.NewRequest("GET", "/repos/alice/test-repo/pulls/1/reviews", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.listReviews)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp) != 3 {
+		t.Fatalf("Expected 3 reviews, got %d", len(resp))
+	}
+
+	// Verify review states
+	states := []string{"PENDING", "APPROVED", "CHANGES_REQUESTED"}
+	for i, review := range resp {
+		if review["state"] != states[i] {
+			t.Fatalf("Expected state '%s' at index %d, got %v", states[i], i, review["state"])
+		}
+	}
+}
+
+func TestSubmitReview(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, PR, and PENDING review
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _, _ := store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+	review, _ := store.CreateReview(issue.ID, user.ID, "PENDING", "Review body")
+
+	// Verify review is PENDING and has no submitted_at
+	if review.SubmittedAt != nil {
+		t.Fatal("PENDING review should not have submitted_at")
+	}
+
+	body := `{}`
+	req := httptest.NewRequest("PUT", "/repos/alice/test-repo/pulls/1/reviews/1", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	rctx.URLParams.Add("id", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.submitReview)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	// Submitted review should have submitted_at
+	if _, exists := resp["submitted_at"]; !exists {
+		t.Fatal("Submitted review should have submitted_at")
+	}
+
+	// Verify in database
+	updated, _ := store.GetReview(review.ID)
+	if updated.SubmittedAt == nil {
+		t.Fatal("Review should have submitted_at after submit")
+	}
+}
+
+func TestDismissReview(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, PR, and APPROVED review
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _, _ := store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+	review, _ := store.CreateReview(issue.ID, user.ID, "APPROVED", "LGTM")
+
+	// Verify review is APPROVED
+	if review.State != "APPROVED" {
+		t.Fatalf("Expected state 'APPROVED', got '%s'", review.State)
+	}
+	if review.DismissedAt != nil {
+		t.Fatal("Review should not have dismissed_at initially")
+	}
+
+	body := `{}`
+	req := httptest.NewRequest("DELETE", "/repos/alice/test-repo/pulls/1/reviews/1", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	rctx.URLParams.Add("id", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.dismissReview)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	// Dismissed review should have DISMISSED state
+	if resp["state"] != "DISMISSED" {
+		t.Fatalf("Expected state 'DISMISSED', got %v", resp["state"])
+	}
+	if _, exists := resp["dismissed_at"]; !exists {
+		t.Fatal("Dismissed review should have dismissed_at")
+	}
+
+	// Verify in database
+	updated, _ := store.GetReview(review.ID)
+	if updated.State != "DISMISSED" {
+		t.Fatalf("Expected state 'DISMISSED', got '%s'", updated.State)
+	}
+	if updated.DismissedAt == nil {
+		t.Fatal("Review should have dismissed_at after dismiss")
 	}
 }

@@ -115,6 +115,12 @@ func (p *GitHubPlugin) RegisterRoutes(r chi.Router) {
 	r.Patch("/repos/{owner}/{repo}/issues/comments/{comment_id}", p.requireAuth(p.updateComment))
 	r.Delete("/repos/{owner}/{repo}/issues/comments/{comment_id}", p.requireAuth(p.deleteComment))
 
+	// Review endpoints
+	r.Post("/repos/{owner}/{repo}/pulls/{number}/reviews", p.requireAuth(p.createReview))
+	r.Get("/repos/{owner}/{repo}/pulls/{number}/reviews", p.requireAuth(p.listReviews))
+	r.Put("/repos/{owner}/{repo}/pulls/{number}/reviews/{id}", p.requireAuth(p.submitReview))
+	r.Delete("/repos/{owner}/{repo}/pulls/{number}/reviews/{id}", p.requireAuth(p.dismissReview))
+
 	// More routes will be added in later tasks
 }
 

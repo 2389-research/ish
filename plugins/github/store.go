@@ -104,6 +104,17 @@ type Comment struct {
 	UpdatedAt time.Time
 }
 
+type Review struct {
+	ID            int64
+	PullRequestID int64
+	UserID        int64
+	State         string
+	Body          string
+	CommitSHA     string
+	SubmittedAt   *time.Time
+	DismissedAt   *time.Time
+}
+
 func NewGitHubStore(db *sql.DB) (*GitHubStore, error) {
 	store := &GitHubStore{db: db}
 	if err := store.initTables(); err != nil {
@@ -1010,6 +1021,141 @@ func (s *GitHubStore) DeleteComment(commentID int64) error {
 		DELETE FROM github_comments
 		WHERE id = ?
 	`, commentID)
+
+	return err
+}
+
+// generateCommitSHA creates a fake 40-character hex SHA for reviews
+func generateCommitSHA() (string, error) {
+	bytes := make([]byte, 20)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// CreateReview creates a new review for a pull request
+func (s *GitHubStore) CreateReview(pullRequestID, userID int64, state, body string) (*Review, error) {
+	// Generate a fake commit SHA
+	commitSHA, err := generateCommitSHA()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := s.db.Exec(`
+		INSERT INTO github_reviews (pull_request_id, user_id, state, body, commit_sha)
+		VALUES (?, ?, ?, ?, ?)
+	`, pullRequestID, userID, state, body, commitSHA)
+
+	if err != nil {
+		return nil, err
+	}
+
+	reviewID, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Review{
+		ID:            reviewID,
+		PullRequestID: pullRequestID,
+		UserID:        userID,
+		State:         state,
+		Body:          body,
+		CommitSHA:     commitSHA,
+	}, nil
+}
+
+// GetReview gets a review by ID
+func (s *GitHubStore) GetReview(reviewID int64) (*Review, error) {
+	var review Review
+	var body sql.NullString
+	var submittedAt, dismissedAt sql.NullTime
+
+	err := s.db.QueryRow(`
+		SELECT id, pull_request_id, user_id, state, body, commit_sha, submitted_at, dismissed_at
+		FROM github_reviews
+		WHERE id = ?
+	`, reviewID).Scan(&review.ID, &review.PullRequestID, &review.UserID, &review.State, &body, &review.CommitSHA, &submittedAt, &dismissedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if body.Valid {
+		review.Body = body.String
+	}
+	if submittedAt.Valid {
+		review.SubmittedAt = &submittedAt.Time
+	}
+	if dismissedAt.Valid {
+		review.DismissedAt = &dismissedAt.Time
+	}
+
+	return &review, nil
+}
+
+// ListReviews lists all reviews for a pull request
+func (s *GitHubStore) ListReviews(pullRequestID int64) ([]*Review, error) {
+	rows, err := s.db.Query(`
+		SELECT id, pull_request_id, user_id, state, body, commit_sha, submitted_at, dismissed_at
+		FROM github_reviews
+		WHERE pull_request_id = ?
+		ORDER BY id ASC
+	`, pullRequestID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reviews []*Review
+	for rows.Next() {
+		var review Review
+		var body sql.NullString
+		var submittedAt, dismissedAt sql.NullTime
+
+		err := rows.Scan(&review.ID, &review.PullRequestID, &review.UserID, &review.State, &body, &review.CommitSHA, &submittedAt, &dismissedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		if body.Valid {
+			review.Body = body.String
+		}
+		if submittedAt.Valid {
+			review.SubmittedAt = &submittedAt.Time
+		}
+		if dismissedAt.Valid {
+			review.DismissedAt = &dismissedAt.Time
+		}
+
+		reviews = append(reviews, &review)
+	}
+
+	return reviews, rows.Err()
+}
+
+// SubmitReview sets the submitted_at timestamp for a review
+func (s *GitHubStore) SubmitReview(reviewID int64) error {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE github_reviews
+		SET submitted_at = ?
+		WHERE id = ?
+	`, now, reviewID)
+
+	return err
+}
+
+// DismissReview sets the dismissed_at timestamp and changes state to DISMISSED
+func (s *GitHubStore) DismissReview(reviewID int64) error {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE github_reviews
+		SET state = 'DISMISSED', dismissed_at = ?
+		WHERE id = ?
+	`, now, reviewID)
 
 	return err
 }

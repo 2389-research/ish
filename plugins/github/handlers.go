@@ -775,3 +775,262 @@ func commentToResponse(comment *Comment, user *User) map[string]interface{} {
 
 	return response
 }
+
+// createReview handles POST /repos/{owner}/{repo}/pulls/{number}/reviews
+func (p *GitHubPlugin) createReview(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(*User)
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	var req struct {
+		State string `json:"state"`
+		Body  string `json:"body"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.State == "" {
+		writeError(w, http.StatusBadRequest, "state is required")
+		return
+	}
+
+	// Validate state
+	validStates := map[string]bool{
+		"PENDING":            true,
+		"COMMENTED":          true,
+		"APPROVED":           true,
+		"CHANGES_REQUESTED":  true,
+	}
+	if !validStates[req.State] {
+		writeError(w, http.StatusBadRequest, "invalid state")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var prNum int
+	if _, err := fmt.Sscanf(number, "%d", &prNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid pull request number")
+		return
+	}
+
+	// Get PR to verify it exists
+	issue, _, err := p.store.GetPullRequest(repo.ID, prNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "pull request not found")
+		return
+	}
+
+	// Create review
+	review, err := p.store.CreateReview(issue.ID, user.ID, req.State, req.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create review")
+		return
+	}
+
+	response := reviewToResponse(review, user)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// listReviews handles GET /repos/{owner}/{repo}/pulls/{number}/reviews
+func (p *GitHubPlugin) listReviews(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var prNum int
+	if _, err := fmt.Sscanf(number, "%d", &prNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid pull request number")
+		return
+	}
+
+	// Get PR to verify it exists
+	issue, _, err := p.store.GetPullRequest(repo.ID, prNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "pull request not found")
+		return
+	}
+
+	// List reviews
+	reviews, err := p.store.ListReviews(issue.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list reviews")
+		return
+	}
+
+	var response []map[string]interface{}
+	for _, review := range reviews {
+		reviewUser, _ := p.store.GetUserByID(review.UserID)
+		response = append(response, reviewToResponse(review, reviewUser))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// submitReview handles PUT /repos/{owner}/{repo}/pulls/{number}/reviews/{id}
+func (p *GitHubPlugin) submitReview(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+	reviewID := chi.URLParam(r, "id")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var prNum int
+	if _, err := fmt.Sscanf(number, "%d", &prNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid pull request number")
+		return
+	}
+
+	// Verify PR exists
+	_, _, err = p.store.GetPullRequest(repo.ID, prNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "pull request not found")
+		return
+	}
+
+	// Parse review ID
+	var id int64
+	if _, err := fmt.Sscanf(reviewID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid review id")
+		return
+	}
+
+	// Verify review exists
+	review, err := p.store.GetReview(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "review not found")
+		return
+	}
+
+	// Submit the review
+	if err := p.store.SubmitReview(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to submit review")
+		return
+	}
+
+	// Reload review to get updated data
+	review, _ = p.store.GetReview(id)
+	reviewUser, _ := p.store.GetUserByID(review.UserID)
+	response := reviewToResponse(review, reviewUser)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// dismissReview handles DELETE /repos/{owner}/{repo}/pulls/{number}/reviews/{id}
+func (p *GitHubPlugin) dismissReview(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+	reviewID := chi.URLParam(r, "id")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var prNum int
+	if _, err := fmt.Sscanf(number, "%d", &prNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid pull request number")
+		return
+	}
+
+	// Verify PR exists
+	_, _, err = p.store.GetPullRequest(repo.ID, prNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "pull request not found")
+		return
+	}
+
+	// Parse review ID
+	var id int64
+	if _, err := fmt.Sscanf(reviewID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid review id")
+		return
+	}
+
+	// Verify review exists
+	review, err := p.store.GetReview(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "review not found")
+		return
+	}
+
+	// Dismiss the review
+	if err := p.store.DismissReview(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to dismiss review")
+		return
+	}
+
+	// Reload review to get updated data
+	review, _ = p.store.GetReview(id)
+	reviewUser, _ := p.store.GetUserByID(review.UserID)
+	response := reviewToResponse(review, reviewUser)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// reviewToResponse converts Review to GitHub API response format
+func reviewToResponse(review *Review, user *User) map[string]interface{} {
+	response := map[string]interface{}{
+		"id":         review.ID,
+		"state":      review.State,
+		"body":       review.Body,
+		"commit_id":  review.CommitSHA,
+	}
+
+	if user != nil {
+		response["user"] = map[string]interface{}{
+			"login": user.Login,
+			"id":    user.ID,
+			"type":  user.Type,
+		}
+	}
+
+	if review.SubmittedAt != nil {
+		response["submitted_at"] = review.SubmittedAt.Format(time.RFC3339)
+	}
+
+	if review.DismissedAt != nil {
+		response["dismissed_at"] = review.DismissedAt.Format(time.RFC3339)
+	}
+
+	return response
+}
