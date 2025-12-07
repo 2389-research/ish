@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -176,6 +177,18 @@ func (p *GitHubPlugin) createIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := issueToResponse(issue, user, repo)
+
+	// Fire webhooks for issues event
+	webhookPayload := map[string]interface{}{
+		"action": "opened",
+		"issue":  response,
+		"repository": map[string]interface{}{
+			"id":        repo.ID,
+			"name":      repo.Name,
+			"full_name": repo.FullName,
+		},
+	}
+	go p.fireWebhooksForEvent(repo.ID, "issues", webhookPayload)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -395,6 +408,18 @@ func (p *GitHubPlugin) createPullRequest(w http.ResponseWriter, r *http.Request)
 	}
 
 	response := pullRequestToResponse(issue, pr, user, repo)
+
+	// Fire webhooks for pull_request event
+	webhookPayload := map[string]interface{}{
+		"action":       "opened",
+		"pull_request": response,
+		"repository": map[string]interface{}{
+			"id":        repo.ID,
+			"name":      repo.Name,
+			"full_name": repo.FullName,
+		},
+	}
+	go p.fireWebhooksForEvent(repo.ID, "pull_request", webhookPayload)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -631,6 +656,20 @@ func (p *GitHubPlugin) createComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := commentToResponse(comment, user)
+
+	// Fire webhooks for issue_comment event
+	issueResponse := issueToResponse(issue, user, repo)
+	webhookPayload := map[string]interface{}{
+		"action":  "created",
+		"comment": response,
+		"issue":   issueResponse,
+		"repository": map[string]interface{}{
+			"id":        repo.ID,
+			"name":      repo.Name,
+			"full_name": repo.FullName,
+		},
+	}
+	go p.fireWebhooksForEvent(repo.ID, "issue_comment", webhookPayload)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1030,6 +1069,365 @@ func reviewToResponse(review *Review, user *User) map[string]interface{} {
 
 	if review.DismissedAt != nil {
 		response["dismissed_at"] = review.DismissedAt.Format(time.RFC3339)
+	}
+
+	return response
+}
+
+// fireWebhooksForEvent finds active webhooks for an event and fires them
+func (p *GitHubPlugin) fireWebhooksForEvent(repoID int64, eventType string, payload interface{}) {
+	webhooks, err := p.store.GetActiveWebhooksForEvent(repoID, eventType)
+	if err != nil {
+		// Log error but don't fail the request
+		return
+	}
+
+	// Fire webhooks synchronously for now
+	for _, webhook := range webhooks {
+		payloadBytes, _ := json.Marshal(payload)
+		err := fireWebhook(webhook, eventType, payload)
+
+		statusCode := 200
+		errorMsg := ""
+		if err != nil {
+			statusCode = 500
+			errorMsg = err.Error()
+		}
+
+		// Log delivery
+		p.store.CreateWebhookDelivery(webhook.ID, eventType, string(payloadBytes), statusCode, errorMsg)
+	}
+}
+
+// createWebhook handles POST /repos/{owner}/{repo}/hooks
+func (p *GitHubPlugin) createWebhook(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+
+	var req struct {
+		Config struct {
+			URL         string `json:"url"`
+			ContentType string `json:"content_type"`
+			Secret      string `json:"secret"`
+		} `json:"config"`
+		Events []string `json:"events"`
+		Active *bool    `json:"active"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Config.URL == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Default content type
+	contentType := req.Config.ContentType
+	if contentType == "" {
+		contentType = "json"
+	}
+
+	// Create webhook
+	webhook, err := p.store.CreateWebhook(repo.ID, req.Config.URL, contentType, req.Config.Secret, req.Events)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	response := webhookToResponse(webhook)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// listWebhooks handles GET /repos/{owner}/{repo}/hooks
+func (p *GitHubPlugin) listWebhooks(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	webhooks, err := p.store.ListWebhooks(repo.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list webhooks")
+		return
+	}
+
+	var response []map[string]interface{}
+	for _, webhook := range webhooks {
+		response = append(response, webhookToResponse(webhook))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getWebhook handles GET /repos/{owner}/{repo}/hooks/{id}
+func (p *GitHubPlugin) getWebhook(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	hookID := chi.URLParam(r, "id")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse hook ID
+	var id int64
+	if _, err := fmt.Sscanf(hookID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hook id")
+		return
+	}
+
+	webhook, err := p.store.GetWebhook(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	// Verify webhook belongs to this repo
+	if webhook.RepoID != repo.ID {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	response := webhookToResponse(webhook)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// updateWebhook handles PATCH /repos/{owner}/{repo}/hooks/{id}
+func (p *GitHubPlugin) updateWebhook(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	hookID := chi.URLParam(r, "id")
+
+	var req struct {
+		Config *struct {
+			URL         string `json:"url"`
+			ContentType string `json:"content_type"`
+			Secret      string `json:"secret"`
+		} `json:"config"`
+		Events []string `json:"events"`
+		Active *bool    `json:"active"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse hook ID
+	var id int64
+	if _, err := fmt.Sscanf(hookID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hook id")
+		return
+	}
+
+	webhook, err := p.store.GetWebhook(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	// Verify webhook belongs to this repo
+	if webhook.RepoID != repo.ID {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	// Update fields
+	if req.Config != nil {
+		if req.Config.URL != "" {
+			webhook.URL = req.Config.URL
+		}
+		if req.Config.ContentType != "" {
+			webhook.ContentType = req.Config.ContentType
+		}
+		if req.Config.Secret != "" {
+			webhook.Secret = req.Config.Secret
+		}
+	}
+	if len(req.Events) > 0 {
+		eventsStr := ""
+		for i, event := range req.Events {
+			if i > 0 {
+				eventsStr += ","
+			}
+			eventsStr += event
+		}
+		webhook.Events = eventsStr
+	}
+	if req.Active != nil {
+		webhook.Active = *req.Active
+	}
+
+	if err := p.store.UpdateWebhook(webhook); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	response := webhookToResponse(webhook)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// deleteWebhook handles DELETE /repos/{owner}/{repo}/hooks/{id}
+func (p *GitHubPlugin) deleteWebhook(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	hookID := chi.URLParam(r, "id")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse hook ID
+	var id int64
+	if _, err := fmt.Sscanf(hookID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hook id")
+		return
+	}
+
+	webhook, err := p.store.GetWebhook(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	// Verify webhook belongs to this repo
+	if webhook.RepoID != repo.ID {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	if err := p.store.DeleteWebhook(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete webhook")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// testWebhook handles POST /repos/{owner}/{repo}/hooks/{id}/tests
+func (p *GitHubPlugin) testWebhook(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	hookID := chi.URLParam(r, "id")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse hook ID
+	var id int64
+	if _, err := fmt.Sscanf(hookID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hook id")
+		return
+	}
+
+	webhook, err := p.store.GetWebhook(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	// Verify webhook belongs to this repo
+	if webhook.RepoID != repo.ID {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+
+	// Fire test ping event
+	payload := map[string]interface{}{
+		"zen":    "Design for failure.",
+		"hook_id": webhook.ID,
+		"repository": map[string]interface{}{
+			"id":        repo.ID,
+			"name":      repo.Name,
+			"full_name": repo.FullName,
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	err = fireWebhook(webhook, "ping", payload)
+
+	statusCode := 200
+	errorMsg := ""
+	if err != nil {
+		statusCode = 500
+		errorMsg = err.Error()
+	}
+
+	// Log delivery
+	p.store.CreateWebhookDelivery(webhook.ID, "ping", string(payloadBytes), statusCode, errorMsg)
+
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "webhook delivery failed: "+err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// webhookToResponse converts Webhook to GitHub API response format
+func webhookToResponse(webhook *Webhook) map[string]interface{} {
+	events := []string{}
+	if webhook.Events != "" {
+		events = strings.Split(webhook.Events, ",")
+	}
+
+	response := map[string]interface{}{
+		"id":     webhook.ID,
+		"type":   "Repository",
+		"active": webhook.Active,
+		"events": events,
+		"config": map[string]interface{}{
+			"url":          webhook.URL,
+			"content_type": webhook.ContentType,
+		},
+		"created_at": webhook.CreatedAt.Format(time.RFC3339),
+		"updated_at": webhook.UpdatedAt.Format(time.RFC3339),
 	}
 
 	return response

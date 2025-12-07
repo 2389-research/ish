@@ -121,7 +121,13 @@ func (p *GitHubPlugin) RegisterRoutes(r chi.Router) {
 	r.Put("/repos/{owner}/{repo}/pulls/{number}/reviews/{id}", p.requireAuth(p.submitReview))
 	r.Delete("/repos/{owner}/{repo}/pulls/{number}/reviews/{id}", p.requireAuth(p.dismissReview))
 
-	// More routes will be added in later tasks
+	// Webhook endpoints
+	r.Post("/repos/{owner}/{repo}/hooks", p.requireAuth(p.createWebhook))
+	r.Get("/repos/{owner}/{repo}/hooks", p.requireAuth(p.listWebhooks))
+	r.Get("/repos/{owner}/{repo}/hooks/{id}", p.requireAuth(p.getWebhook))
+	r.Patch("/repos/{owner}/{repo}/hooks/{id}", p.requireAuth(p.updateWebhook))
+	r.Delete("/repos/{owner}/{repo}/hooks/{id}", p.requireAuth(p.deleteWebhook))
+	r.Post("/repos/{owner}/{repo}/hooks/{id}/tests", p.requireAuth(p.testWebhook))
 }
 
 // Placeholder handlers for routes not yet implemented

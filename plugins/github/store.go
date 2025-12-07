@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -113,6 +114,28 @@ type Review struct {
 	CommitSHA     string
 	SubmittedAt   *time.Time
 	DismissedAt   *time.Time
+}
+
+type Webhook struct {
+	ID          int64
+	RepoID      int64
+	URL         string
+	ContentType string
+	Secret      string
+	Events      string
+	Active      bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type WebhookDelivery struct {
+	ID           int64
+	WebhookID    int64
+	EventType    string
+	Payload      string
+	DeliveredAt  time.Time
+	StatusCode   int
+	ErrorMessage string
 }
 
 func NewGitHubStore(db *sql.DB) (*GitHubStore, error) {
@@ -1158,4 +1181,187 @@ func (s *GitHubStore) DismissReview(reviewID int64) error {
 	`, now, reviewID)
 
 	return err
+}
+
+// CreateWebhook creates a new webhook for a repository
+func (s *GitHubStore) CreateWebhook(repoID int64, url, contentType, secret string, events []string) (*Webhook, error) {
+	// Validate the webhook URL for SSRF protection
+	if err := validateWebhookURL(url); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	eventsStr := ""
+	if len(events) > 0 {
+		// Join events with commas
+		for i, event := range events {
+			if i > 0 {
+				eventsStr += ","
+			}
+			eventsStr += event
+		}
+	}
+
+	result, err := s.db.Exec(`
+		INSERT INTO github_webhooks (repo_id, url, content_type, secret, events, active, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+	`, repoID, url, contentType, secret, eventsStr, now, now)
+
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Webhook{
+		ID:          id,
+		RepoID:      repoID,
+		URL:         url,
+		ContentType: contentType,
+		Secret:      secret,
+		Events:      eventsStr,
+		Active:      true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}, nil
+}
+
+// ListWebhooks lists all webhooks for a repository
+func (s *GitHubStore) ListWebhooks(repoID int64) ([]*Webhook, error) {
+	rows, err := s.db.Query(`
+		SELECT id, repo_id, url, content_type, secret, events, active, created_at, updated_at
+		FROM github_webhooks
+		WHERE repo_id = ?
+		ORDER BY id ASC
+	`, repoID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []*Webhook
+	for rows.Next() {
+		var webhook Webhook
+		var secret sql.NullString
+
+		err := rows.Scan(
+			&webhook.ID, &webhook.RepoID, &webhook.URL, &webhook.ContentType,
+			&secret, &webhook.Events, &webhook.Active, &webhook.CreatedAt, &webhook.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if secret.Valid {
+			webhook.Secret = secret.String
+		}
+
+		webhooks = append(webhooks, &webhook)
+	}
+
+	return webhooks, rows.Err()
+}
+
+// GetWebhook gets a webhook by ID
+func (s *GitHubStore) GetWebhook(webhookID int64) (*Webhook, error) {
+	var webhook Webhook
+	var secret sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT id, repo_id, url, content_type, secret, events, active, created_at, updated_at
+		FROM github_webhooks
+		WHERE id = ?
+	`, webhookID).Scan(
+		&webhook.ID, &webhook.RepoID, &webhook.URL, &webhook.ContentType,
+		&secret, &webhook.Events, &webhook.Active, &webhook.CreatedAt, &webhook.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if secret.Valid {
+		webhook.Secret = secret.String
+	}
+
+	return &webhook, nil
+}
+
+// UpdateWebhook updates a webhook
+func (s *GitHubStore) UpdateWebhook(webhook *Webhook) error {
+	// Validate the webhook URL for SSRF protection
+	if err := validateWebhookURL(webhook.URL); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	webhook.UpdatedAt = now
+
+	_, err := s.db.Exec(`
+		UPDATE github_webhooks
+		SET url = ?, content_type = ?, secret = ?, events = ?, active = ?, updated_at = ?
+		WHERE id = ?
+	`, webhook.URL, webhook.ContentType, webhook.Secret, webhook.Events, webhook.Active, webhook.UpdatedAt, webhook.ID)
+
+	return err
+}
+
+// DeleteWebhook deletes a webhook
+func (s *GitHubStore) DeleteWebhook(webhookID int64) error {
+	_, err := s.db.Exec(`DELETE FROM github_webhooks WHERE id = ?`, webhookID)
+	return err
+}
+
+// CreateWebhookDelivery logs a webhook delivery attempt
+func (s *GitHubStore) CreateWebhookDelivery(webhookID int64, eventType, payload string, statusCode int, errorMsg string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO github_webhook_deliveries (webhook_id, event_type, payload, delivered_at, status_code, error_message)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+	`, webhookID, eventType, payload, statusCode, errorMsg)
+
+	return err
+}
+
+// GetActiveWebhooksForEvent gets all active webhooks for a repo that subscribe to an event
+func (s *GitHubStore) GetActiveWebhooksForEvent(repoID int64, eventType string) ([]*Webhook, error) {
+	rows, err := s.db.Query(`
+		SELECT id, repo_id, url, content_type, secret, events, active, created_at, updated_at
+		FROM github_webhooks
+		WHERE repo_id = ? AND active = 1
+	`, repoID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []*Webhook
+	for rows.Next() {
+		var webhook Webhook
+		var secret sql.NullString
+
+		err := rows.Scan(
+			&webhook.ID, &webhook.RepoID, &webhook.URL, &webhook.ContentType,
+			&secret, &webhook.Events, &webhook.Active, &webhook.CreatedAt, &webhook.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if secret.Valid {
+			webhook.Secret = secret.String
+		}
+
+		// Check if this webhook subscribes to this event type
+		// Events are stored as comma-separated list
+		if webhook.Events == "" || strings.Contains(webhook.Events, eventType) {
+			webhooks = append(webhooks, &webhook)
+		}
+	}
+
+	return webhooks, rows.Err()
 }

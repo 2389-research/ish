@@ -983,3 +983,178 @@ func TestDismissReview(t *testing.T) {
 		t.Fatal("Review should have dismissed_at after dismiss")
 	}
 }
+
+func TestCreateWebhook(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user and repository
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	store.CreateRepository(user.ID, "test-repo", "", false)
+
+	body := `{
+		"config": {
+			"url": "https://example.com/webhook",
+			"content_type": "json",
+			"secret": "my-secret"
+		},
+		"events": ["issues", "pull_request"]
+	}`
+	req := httptest.NewRequest("POST", "/repos/alice/test-repo/hooks", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.createWebhook)
+	handler(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["id"] == nil {
+		t.Fatal("Expected webhook ID in response")
+	}
+	config := resp["config"].(map[string]interface{})
+	if config["url"] != "https://example.com/webhook" {
+		t.Fatalf("Expected URL 'https://example.com/webhook', got %v", config["url"])
+	}
+	events := resp["events"].([]interface{})
+	if len(events) != 2 {
+		t.Fatalf("Expected 2 events, got %d", len(events))
+	}
+}
+
+func TestCreateWebhookSSRFProtection(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user and repository
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	store.CreateRepository(user.ID, "test-repo", "", false)
+
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"localhost", "http://localhost/webhook"},
+		{"127.0.0.1", "http://127.0.0.1/webhook"},
+		{"10.x", "http://10.0.0.1/webhook"},
+		{"192.168.x", "http://192.168.1.1/webhook"},
+		{"link-local", "http://169.254.169.254/webhook"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{
+				"config": {
+					"url": "%s",
+					"content_type": "json"
+				},
+				"events": ["issues"]
+			}`, tt.url)
+			req := httptest.NewRequest("POST", "/repos/alice/test-repo/hooks", bytes.NewBufferString(body))
+			req.Header.Set("Authorization", "Bearer ghp_test")
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			// Setup chi context
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("owner", "alice")
+			rctx.URLParams.Add("repo", "test-repo")
+			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+			handler := plugin.requireAuth(plugin.createWebhook)
+			handler(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("Expected 400 for %s, got %d: %s", tt.url, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestListWebhooks(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and webhook
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	store.CreateWebhook(repo.ID, "https://example.com/webhook", "json", "secret", []string{"issues"})
+
+	req := httptest.NewRequest("GET", "/repos/alice/test-repo/hooks", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.listWebhooks)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp) != 1 {
+		t.Fatalf("Expected 1 webhook, got %d", len(resp))
+	}
+}
+
+func TestDeleteWebhook(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and webhook
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	webhook, _ := store.CreateWebhook(repo.ID, "https://example.com/webhook", "json", "secret", []string{"issues"})
+
+	req := httptest.NewRequest("DELETE", "/repos/alice/test-repo/hooks/1", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("id", fmt.Sprintf("%d", webhook.ID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.deleteWebhook)
+	handler(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify deletion
+	_, err := store.GetWebhook(webhook.ID)
+	if err == nil {
+		t.Fatal("Expected webhook to be deleted")
+	}
+}
