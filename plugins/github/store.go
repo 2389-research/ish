@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -462,7 +463,7 @@ func (s *GitHubStore) ValidateToken(token string) (*User, error) {
 	if err != nil {
 		// Log but don't fail validation since user was already authenticated
 		// Token tracking is best-effort
-		// TODO: Add proper logging when logger is available
+		fmt.Fprintf(os.Stderr, "github: warning: failed to update token last_used_at: %v\n", err)
 	}
 
 	return &user, nil
@@ -655,6 +656,28 @@ func (s *GitHubStore) ListUserRepositories(ownerID int64) ([]*Repository, error)
 // CreateIssue creates a new issue with auto-incrementing number per repo
 // Uses a transaction to prevent race conditions in number assignment
 func (s *GitHubStore) CreateIssue(repoID, userID int64, title, body string, isPR bool) (*Issue, error) {
+	// Retry loop to handle race condition in issue number assignment
+	// The UNIQUE(repo_id, number) constraint will catch duplicate numbers
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		issue, err := s.createIssueAttempt(repoID, userID, title, body, isPR)
+		if err != nil {
+			// Check if it's a unique constraint violation (race condition)
+			// SQLite error message contains "UNIQUE constraint failed"
+			if attempt < maxRetries-1 && (err.Error() == "UNIQUE constraint failed: github_issues.repo_id, github_issues.number" ||
+				err.Error() == "constraint failed") {
+				// Retry with new number
+				continue
+			}
+			return nil, err
+		}
+		return issue, nil
+	}
+	return nil, fmt.Errorf("failed to create issue after %d attempts", maxRetries)
+}
+
+// createIssueAttempt performs a single attempt to create an issue
+func (s *GitHubStore) createIssueAttempt(repoID, userID int64, title, body string, isPR bool) (*Issue, error) {
 	// Start transaction for atomic number assignment
 	tx, err := s.db.Begin()
 	if err != nil {

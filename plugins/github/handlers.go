@@ -587,32 +587,43 @@ func pullRequestToResponse(issue *Issue, pr *PullRequest, user *User, repo *Repo
 		"locked":     issue.Locked,
 		"created_at": issue.CreatedAt.Format(time.RFC3339),
 		"updated_at": issue.UpdatedAt.Format(time.RFC3339),
-		"user": map[string]interface{}{
+	}
+
+	// Handle nil user gracefully (user might have been deleted)
+	if user != nil {
+		response["user"] = map[string]interface{}{
 			"login": user.Login,
 			"id":    user.ID,
 			"type":  user.Type,
-		},
-		"head": map[string]interface{}{
-			"ref": pr.HeadRef,
-			"repo": map[string]interface{}{
-				"id":        repo.ID,
-				"name":      repo.Name,
-				"full_name": repo.FullName,
-			},
-		},
-		"base": map[string]interface{}{
-			"ref": pr.BaseRef,
-			"repo": map[string]interface{}{
-				"id":        repo.ID,
-				"name":      repo.Name,
-				"full_name": repo.FullName,
-			},
-		},
-		"merged":     pr.Merged,
-		"mergeable":  pr.Mergeable,
-		"rebaseable": pr.Rebaseable,
-		"draft":      pr.Draft,
+		}
+	} else {
+		response["user"] = map[string]interface{}{
+			"login": "[deleted]",
+			"id":    0,
+			"type":  "User",
+		}
 	}
+
+	response["head"] = map[string]interface{}{
+		"ref": pr.HeadRef,
+		"repo": map[string]interface{}{
+			"id":        repo.ID,
+			"name":      repo.Name,
+			"full_name": repo.FullName,
+		},
+	}
+	response["base"] = map[string]interface{}{
+		"ref": pr.BaseRef,
+		"repo": map[string]interface{}{
+			"id":        repo.ID,
+			"name":      repo.Name,
+			"full_name": repo.FullName,
+		},
+	}
+	response["merged"] = pr.Merged
+	response["mergeable"] = pr.Mergeable
+	response["rebaseable"] = pr.Rebaseable
+	response["draft"] = pr.Draft
 
 	if issue.StateReason != "" {
 		response["state_reason"] = issue.StateReason
@@ -842,11 +853,18 @@ func commentToResponse(comment *Comment, user *User) map[string]interface{} {
 		"updated_at": comment.UpdatedAt.Format(time.RFC3339),
 	}
 
+	// Handle nil user gracefully (user might have been deleted)
 	if user != nil {
 		response["user"] = map[string]interface{}{
 			"login": user.Login,
 			"id":    user.ID,
 			"type":  user.Type,
+		}
+	} else {
+		response["user"] = map[string]interface{}{
+			"login": "[deleted]",
+			"id":    0,
+			"type":  "User",
 		}
 	}
 
@@ -1097,11 +1115,18 @@ func reviewToResponse(review *Review, user *User) map[string]interface{} {
 		"commit_id":  review.CommitSHA,
 	}
 
+	// Handle nil user gracefully (user might have been deleted)
 	if user != nil {
 		response["user"] = map[string]interface{}{
 			"login": user.Login,
 			"id":    user.ID,
 			"type":  user.Type,
+		}
+	} else {
+		response["user"] = map[string]interface{}{
+			"login": "[deleted]",
+			"id":    0,
+			"type":  "User",
 		}
 	}
 
