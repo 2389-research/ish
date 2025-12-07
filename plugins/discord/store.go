@@ -333,3 +333,117 @@ func (s *DiscordStore) ListMessages(webhookID string, limit int) ([]*WebhookMess
 	}
 	return messages, rows.Err()
 }
+
+// ListAllWebhooks retrieves webhooks across all accounts for admin view
+func (s *DiscordStore) ListAllWebhooks(limit, offset int) ([]*Webhook, error) {
+	query := `SELECT id, token, type, name, avatar, channel_id, guild_id, application_id, created_at, updated_at, deleted_at
+		FROM discord_webhooks
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	rows, err := s.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []*Webhook
+	for rows.Next() {
+		webhook := &Webhook{}
+		var avatar, applicationID sql.NullString
+		var deletedAt sql.NullTime
+		err := rows.Scan(
+			&webhook.ID, &webhook.Token, &webhook.Type, &webhook.Name, &avatar,
+			&webhook.ChannelID, &webhook.GuildID, &applicationID,
+			&webhook.CreatedAt, &webhook.UpdatedAt, &deletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if avatar.Valid {
+			webhook.Avatar = avatar.String
+		}
+		if applicationID.Valid {
+			webhook.ApplicationID = applicationID.String
+		}
+		if deletedAt.Valid {
+			webhook.DeletedAt = &deletedAt.Time
+		}
+		webhooks = append(webhooks, webhook)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return webhooks, nil
+}
+
+// ListAllMessages retrieves messages across all webhooks for admin view
+func (s *DiscordStore) ListAllMessages(limit, offset int) ([]*WebhookMessage, error) {
+	query := `SELECT id, webhook_id, content, username, avatar_url, embeds, components, attachments, thread_id, flags, created_at, updated_at, edited_at, deleted_at
+		FROM discord_webhook_messages
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	rows, err := s.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []*WebhookMessage
+	for rows.Next() {
+		msg := &WebhookMessage{}
+		var content, username, avatarURL, embeds, components, attachments, threadID sql.NullString
+		var flags sql.NullInt64
+		var editedAt, deletedAt sql.NullTime
+		err := rows.Scan(
+			&msg.ID, &msg.WebhookID, &content, &username, &avatarURL,
+			&embeds, &components, &attachments, &threadID, &flags,
+			&msg.CreatedAt, &msg.UpdatedAt, &editedAt, &deletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if content.Valid {
+			msg.Content = content.String
+		}
+		if username.Valid {
+			msg.Username = username.String
+		}
+		if avatarURL.Valid {
+			msg.AvatarURL = avatarURL.String
+		}
+		if embeds.Valid {
+			msg.Embeds = embeds.String
+		}
+		if components.Valid {
+			msg.Components = components.String
+		}
+		if attachments.Valid {
+			msg.Attachments = attachments.String
+		}
+		if threadID.Valid {
+			msg.ThreadID = threadID.String
+		}
+		if flags.Valid {
+			msg.Flags = int(flags.Int64)
+		}
+		if editedAt.Valid {
+			msg.EditedAt = &editedAt.Time
+		}
+		if deletedAt.Valid {
+			msg.DeletedAt = &deletedAt.Time
+		}
+		messages = append(messages, msg)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}

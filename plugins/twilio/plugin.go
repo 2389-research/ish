@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -133,4 +134,156 @@ func (p *TwilioPlugin) SetDB(db *sql.DB) error {
 	go p.StartWebhookWorker(context.Background())
 
 	return nil
+}
+
+// ListResources implements core.DataProvider to expose data to admin UI
+func (p *TwilioPlugin) ListResources(ctx context.Context, slug string, opts core.ListOptions) ([]map[string]interface{}, error) {
+	switch slug {
+	case "accounts":
+		accounts, err := p.store.ListAllAccounts(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertAccountsToMaps(accounts), nil
+	case "messages":
+		messages, err := p.store.ListAllMessages(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertMessagesToMaps(messages), nil
+	case "calls":
+		calls, err := p.store.ListAllCalls(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertCallsToMaps(calls), nil
+	case "phone_numbers":
+		phoneNumbers, err := p.store.ListAllPhoneNumbers(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertPhoneNumbersToMaps(phoneNumbers), nil
+	default:
+		return nil, fmt.Errorf("unknown resource: %s", slug)
+	}
+}
+
+// GetResource implements core.DataProvider to fetch individual resources
+func (p *TwilioPlugin) GetResource(ctx context.Context, slug string, id string) (map[string]interface{}, error) {
+	switch slug {
+	case "accounts":
+		account, err := p.store.GetOrCreateAccount(id)
+		if err != nil {
+			return nil, err
+		}
+		return convertAccountToMap(*account), nil
+	case "messages":
+		message, err := p.store.GetMessage(id)
+		if err != nil {
+			return nil, err
+		}
+		return convertMessageToMap(*message), nil
+	case "calls":
+		call, err := p.store.GetCall(id)
+		if err != nil {
+			return nil, err
+		}
+		return convertCallToMap(*call), nil
+	case "phone_numbers":
+		phoneNumber, err := p.store.GetPhoneNumber(id)
+		if err != nil {
+			return nil, err
+		}
+		return convertPhoneNumberToMap(*phoneNumber), nil
+	default:
+		return nil, fmt.Errorf("unknown resource: %s", slug)
+	}
+}
+
+// Helper conversion functions
+
+func convertAccountsToMaps(accounts []Account) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(accounts))
+	for _, acct := range accounts {
+		result = append(result, convertAccountToMap(acct))
+	}
+	return result
+}
+
+func convertAccountToMap(acct Account) map[string]interface{} {
+	return map[string]interface{}{
+		"account_sid":   acct.AccountSid,
+		"auth_token":    acct.AuthToken,
+		"friendly_name": acct.FriendlyName,
+		"status":        acct.Status,
+		"created_at":    acct.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+func convertMessagesToMaps(messages []Message) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		result = append(result, convertMessageToMap(msg))
+	}
+	return result
+}
+
+func convertMessageToMap(msg Message) map[string]interface{} {
+	m := map[string]interface{}{
+		"sid":          msg.Sid,
+		"account_sid":  msg.AccountSid,
+		"from_number":  msg.FromNumber,
+		"to_number":    msg.ToNumber,
+		"body":         msg.Body,
+		"status":       msg.Status,
+		"direction":    msg.Direction,
+		"date_created": msg.DateCreated.Format("2006-01-02T15:04:05Z"),
+	}
+	if msg.DateSent != nil {
+		m["date_sent"] = msg.DateSent.Format("2006-01-02T15:04:05Z")
+	}
+	return m
+}
+
+func convertCallsToMaps(calls []Call) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(calls))
+	for _, call := range calls {
+		result = append(result, convertCallToMap(call))
+	}
+	return result
+}
+
+func convertCallToMap(call Call) map[string]interface{} {
+	m := map[string]interface{}{
+		"sid":          call.Sid,
+		"account_sid":  call.AccountSid,
+		"from_number":  call.FromNumber,
+		"to_number":    call.ToNumber,
+		"status":       call.Status,
+		"date_created": call.DateCreated.Format("2006-01-02T15:04:05Z"),
+	}
+	if call.Duration != nil {
+		m["duration"] = fmt.Sprintf("%d", *call.Duration)
+	}
+	return m
+}
+
+func convertPhoneNumbersToMaps(phoneNumbers []PhoneNumber) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(phoneNumbers))
+	for _, pn := range phoneNumbers {
+		result = append(result, convertPhoneNumberToMap(pn))
+	}
+	return result
+}
+
+func convertPhoneNumberToMap(pn PhoneNumber) map[string]interface{} {
+	return map[string]interface{}{
+		"sid":           pn.Sid,
+		"account_sid":   pn.AccountSid,
+		"phone_number":  pn.PhoneNumber,
+		"friendly_name": pn.FriendlyName,
+		"voice_url":     pn.VoiceURL,
+		"sms_url":       pn.SmsURL,
+		"created_at":    pn.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
 }

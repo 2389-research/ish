@@ -4,9 +4,11 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"html/template"
+	"log"
 	"net/http"
 	"strings"
 
@@ -49,8 +51,21 @@ func (h *PluginHandlers) PluginListView(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// For now, render with empty data (no backend data fetching yet)
-	resources := []map[string]interface{}{}
+	// Check if plugin supports data fetching
+	var resources []map[string]interface{}
+	if dataProvider, ok := plugin.(core.DataProvider); ok {
+		opts := core.ListOptions{Limit: 50, Offset: 0}
+		fetchedResources, err := dataProvider.ListResources(r.Context(), resourceSlug, opts)
+		if err != nil {
+			log.Printf("Error fetching %s data from %s: %v", resourceSlug, pluginName, err)
+			resources = []map[string]interface{}{} // fallback to empty
+		} else {
+			resources = fetchedResources
+		}
+	} else {
+		log.Printf("Plugin %s does not implement DataProvider", pluginName)
+		resources = []map[string]interface{}{}
+	}
 
 	// Render list view using schema renderer
 	listHTML := RenderResourceList(*resourceSchema, resources)
@@ -125,12 +140,30 @@ func (h *PluginHandlers) PluginDetailView(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Mock data for testing (no backend data fetching yet)
-	data := map[string]interface{}{
-		"id":      id,
-		"subject": "Test Subject",
-		"from":    "test@example.com",
-		"body":    "Test body content",
+	// Check if plugin supports data fetching
+	var data map[string]interface{}
+	if dataProvider, ok := plugin.(core.DataProvider); ok {
+		fetchedData, err := dataProvider.GetResource(context.Background(), resourceSlug, id)
+		if err != nil {
+			log.Printf("Error fetching %s/%s from %s: %v", resourceSlug, id, pluginName, err)
+			// Fallback to mock data
+			data = map[string]interface{}{
+				"id":      id,
+				"subject": "Test Subject",
+				"from":    "test@example.com",
+				"body":    "Test body content",
+			}
+		} else {
+			data = fetchedData
+		}
+	} else {
+		log.Printf("Plugin %s does not implement DataProvider", pluginName)
+		data = map[string]interface{}{
+			"id":      id,
+			"subject": "Test Subject",
+			"from":    "test@example.com",
+			"body":    "Test body content",
+		}
 	}
 
 	// Render detail view using schema renderer
@@ -170,12 +203,30 @@ func (h *PluginHandlers) PluginEditForm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Mock data for testing (no backend data fetching yet)
-	data := map[string]interface{}{
-		"id":      id,
-		"subject": "Test Subject",
-		"from":    "test@example.com",
-		"body":    "Test body content",
+	// Check if plugin supports data fetching
+	var data map[string]interface{}
+	if dataProvider, ok := plugin.(core.DataProvider); ok {
+		fetchedData, err := dataProvider.GetResource(context.Background(), resourceSlug, id)
+		if err != nil {
+			log.Printf("Error fetching %s/%s from %s: %v", resourceSlug, id, pluginName, err)
+			// Fallback to mock data
+			data = map[string]interface{}{
+				"id":      id,
+				"subject": "Test Subject",
+				"from":    "test@example.com",
+				"body":    "Test body content",
+			}
+		} else {
+			data = fetchedData
+		}
+	} else {
+		log.Printf("Plugin %s does not implement DataProvider", pluginName)
+		data = map[string]interface{}{
+			"id":      id,
+			"subject": "Test Subject",
+			"from":    "test@example.com",
+			"body":    "Test body content",
+		}
 	}
 
 	// Render form with data (edit mode)

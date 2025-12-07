@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -178,6 +179,80 @@ func (p *SendGridPlugin) Schema() core.PluginSchema {
 			},
 		},
 	}
+}
+
+// ListResources implements core.DataProvider to expose data to admin UI
+func (p *SendGridPlugin) ListResources(ctx context.Context, slug string, opts core.ListOptions) ([]map[string]interface{}, error) {
+	switch slug {
+	case "messages":
+		messages, err := p.store.ListAllMessages(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertMessagesToMaps(messages), nil
+	case "suppressions":
+		suppressions, err := p.store.ListAllSuppressions(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertSuppressionsToMaps(suppressions), nil
+	default:
+		return nil, fmt.Errorf("unknown resource: %s", slug)
+	}
+}
+
+// GetResource implements core.DataProvider to fetch individual resources
+func (p *SendGridPlugin) GetResource(ctx context.Context, slug string, id string) (map[string]interface{}, error) {
+	switch slug {
+	case "messages":
+		message, err := p.store.GetMessage(id)
+		if err != nil {
+			return nil, err
+		}
+		return convertMessageToMap(message), nil
+	case "suppressions":
+		// Suppressions don't have individual GET by ID in current store
+		// Would need to add GetSuppression method if needed
+		return nil, fmt.Errorf("get suppression by ID not implemented")
+	default:
+		return nil, fmt.Errorf("unknown resource: %s", slug)
+	}
+}
+
+// convertMessagesToMaps converts message structs to maps for admin UI
+func convertMessagesToMaps(messages []*Message) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		result = append(result, convertMessageToMap(msg))
+	}
+	return result
+}
+
+// convertMessageToMap converts a single message to map
+func convertMessageToMap(msg *Message) map[string]interface{} {
+	return map[string]interface{}{
+		"id":         msg.ID,
+		"from_email": msg.FromEmail,
+		"to_email":   msg.ToEmail,
+		"subject":    msg.Subject,
+		"status":     msg.Status,
+		"sent_at":    msg.SentAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+// convertSuppressionsToMaps converts suppression structs to maps for admin UI
+func convertSuppressionsToMaps(suppressions []*Suppression) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(suppressions))
+	for _, supp := range suppressions {
+		result = append(result, map[string]interface{}{
+			"id":         fmt.Sprintf("%d", supp.ID),
+			"email":      supp.Email,
+			"type":       supp.Type,
+			"reason":     supp.Reason,
+			"created_at": supp.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	return result
 }
 
 // Seed is implemented in seed.go

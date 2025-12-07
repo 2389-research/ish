@@ -1516,3 +1516,205 @@ func (s *GitHubStore) GetActiveWebhooksForEvent(repoID int64, eventType string) 
 
 	return webhooks, rows.Err()
 }
+
+// ListAllRepositories retrieves repositories across all accounts for admin view
+func (s *GitHubStore) ListAllRepositories(limit, offset int) ([]Repository, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner_id, name, full_name, description, private, default_branch, fork, archived, disabled,
+			stargazers_count, watchers_count, forks_count, open_issues_count,
+			created_at, updated_at, pushed_at
+		FROM github_repositories
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var repos []Repository
+	for rows.Next() {
+		var repo Repository
+		var description sql.NullString
+		var pushedAt sql.NullTime
+
+		err := rows.Scan(
+			&repo.ID, &repo.OwnerID, &repo.Name, &repo.FullName, &description, &repo.Private,
+			&repo.DefaultBranch, &repo.Fork, &repo.Archived, &repo.Disabled,
+			&repo.StargazersCount, &repo.WatchersCount, &repo.ForksCount, &repo.OpenIssuesCount,
+			&repo.CreatedAt, &repo.UpdatedAt, &pushedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if description.Valid {
+			repo.Description = description.String
+		}
+		if pushedAt.Valid {
+			repo.PushedAt = &pushedAt.Time
+		}
+
+		repos = append(repos, repo)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return repos, nil
+}
+
+// ListAllIssues retrieves issues across all repositories for admin view
+func (s *GitHubStore) ListAllIssues(limit, offset int) ([]Issue, error) {
+	rows, err := s.db.Query(`
+		SELECT id, repo_id, number, title, body, state, state_reason, user_id, assignee_ids, label_ids, milestone_id,
+			locked, comments_count, is_pull_request, created_at, updated_at, closed_at
+		FROM github_issues
+		WHERE is_pull_request = 0
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var issues []Issue
+	for rows.Next() {
+		var issue Issue
+		var body, stateReason, assigneeIDs, labelIDs sql.NullString
+		var milestoneID sql.NullInt64
+		var closedAt sql.NullTime
+
+		err := rows.Scan(
+			&issue.ID, &issue.RepoID, &issue.Number, &issue.Title, &body, &issue.State, &stateReason,
+			&issue.UserID, &assigneeIDs, &labelIDs, &milestoneID, &issue.Locked, &issue.CommentsCount,
+			&issue.IsPullRequest, &issue.CreatedAt, &issue.UpdatedAt, &closedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if body.Valid {
+			issue.Body = body.String
+		}
+		if stateReason.Valid {
+			issue.StateReason = stateReason.String
+		}
+		if assigneeIDs.Valid {
+			issue.AssigneeIDs = assigneeIDs.String
+		}
+		if labelIDs.Valid {
+			issue.LabelIDs = labelIDs.String
+		}
+		if milestoneID.Valid {
+			id := milestoneID.Int64
+			issue.MilestoneID = &id
+		}
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+
+		issues = append(issues, issue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return issues, nil
+}
+
+// ListAllPullRequests retrieves pull requests across all repositories for admin view
+func (s *GitHubStore) ListAllPullRequests(limit, offset int) ([]PullRequest, error) {
+	rows, err := s.db.Query(`
+		SELECT pr.issue_id, pr.head_repo_id, pr.head_ref, pr.base_repo_id, pr.base_ref, pr.merged, pr.mergeable, pr.rebaseable,
+			pr.merge_commit_sha, pr.merged_at, pr.merged_by_id, pr.draft, pr.review_comments_count, pr.commits_count,
+			pr.additions, pr.deletions, pr.changed_files
+		FROM github_pull_requests pr
+		JOIN github_issues i ON pr.issue_id = i.id
+		ORDER BY i.created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var prs []PullRequest
+	for rows.Next() {
+		var pr PullRequest
+		var mergeCommitSHA sql.NullString
+		var mergedAt sql.NullTime
+		var mergedByID sql.NullInt64
+
+		err := rows.Scan(
+			&pr.IssueID, &pr.HeadRepoID, &pr.HeadRef, &pr.BaseRepoID, &pr.BaseRef, &pr.Merged, &pr.Mergeable, &pr.Rebaseable,
+			&mergeCommitSHA, &mergedAt, &mergedByID, &pr.Draft, &pr.ReviewCommentsCount, &pr.CommitsCount,
+			&pr.Additions, &pr.Deletions, &pr.ChangedFiles,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if mergeCommitSHA.Valid {
+			pr.MergeCommitSHA = mergeCommitSHA.String
+		}
+		if mergedAt.Valid {
+			pr.MergedAt = &mergedAt.Time
+		}
+		if mergedByID.Valid {
+			id := mergedByID.Int64
+			pr.MergedByID = &id
+		}
+
+		prs = append(prs, pr)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return prs, nil
+}
+
+// ListAllWebhooks retrieves webhooks across all repositories for admin view
+func (s *GitHubStore) ListAllWebhooks(limit, offset int) ([]Webhook, error) {
+	rows, err := s.db.Query(`
+		SELECT id, repo_id, url, content_type, secret, events, active, created_at, updated_at
+		FROM github_webhooks
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []Webhook
+	for rows.Next() {
+		var webhook Webhook
+		var secret sql.NullString
+
+		err := rows.Scan(
+			&webhook.ID, &webhook.RepoID, &webhook.URL, &webhook.ContentType,
+			&secret, &webhook.Events, &webhook.Active, &webhook.CreatedAt, &webhook.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if secret.Valid {
+			webhook.Secret = secret.String
+		}
+
+		webhooks = append(webhooks, webhook)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return webhooks, nil
+}

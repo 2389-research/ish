@@ -668,3 +668,161 @@ func (s *TwilioStore) MarkWebhookFailed(id int) error {
 	`, id)
 	return err
 }
+
+// ListAllMessages retrieves messages across all accounts for admin view
+func (s *TwilioStore) ListAllMessages(limit, offset int) ([]Message, error) {
+	rows, err := s.db.Query(`
+		SELECT sid, account_sid, from_number, to_number, body, status, direction,
+		       date_created, date_sent, date_updated, num_segments, price, price_unit
+		FROM twilio_messages
+		ORDER BY date_created DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		var dateSent sql.NullTime
+
+		err := rows.Scan(
+			&msg.Sid, &msg.AccountSid, &msg.FromNumber, &msg.ToNumber, &msg.Body,
+			&msg.Status, &msg.Direction, &msg.DateCreated, &dateSent, &msg.DateUpdated,
+			&msg.NumSegments, &msg.Price, &msg.PriceUnit,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if dateSent.Valid {
+			msg.DateSent = &dateSent.Time
+		}
+
+		messages = append(messages, msg)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+// ListAllCalls retrieves calls across all accounts for admin view
+func (s *TwilioStore) ListAllCalls(limit, offset int) ([]Call, error) {
+	rows, err := s.db.Query(`
+		SELECT sid, account_sid, from_number, to_number, status, direction,
+		       duration, date_created, date_updated, answered_by
+		FROM twilio_calls
+		ORDER BY date_created DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var calls []Call
+	for rows.Next() {
+		var call Call
+		var duration sql.NullInt64
+		var answeredBy sql.NullString
+
+		err := rows.Scan(
+			&call.Sid, &call.AccountSid, &call.FromNumber, &call.ToNumber,
+			&call.Status, &call.Direction, &duration, &call.DateCreated,
+			&call.DateUpdated, &answeredBy,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if duration.Valid {
+			dur := int(duration.Int64)
+			call.Duration = &dur
+		}
+
+		if answeredBy.Valid {
+			call.AnsweredBy = answeredBy.String
+		}
+
+		calls = append(calls, call)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return calls, nil
+}
+
+// ListAllAccounts retrieves all accounts for admin view
+func (s *TwilioStore) ListAllAccounts(limit, offset int) ([]Account, error) {
+	rows, err := s.db.Query(`
+		SELECT account_sid, auth_token, friendly_name, status, created_at, updated_at
+		FROM twilio_accounts
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []Account
+	for rows.Next() {
+		var acct Account
+		err := rows.Scan(
+			&acct.AccountSid, &acct.AuthToken, &acct.FriendlyName,
+			&acct.Status, &acct.CreatedAt, &acct.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, acct)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return accounts, nil
+}
+
+// ListAllPhoneNumbers retrieves phone numbers across all accounts for admin view
+func (s *TwilioStore) ListAllPhoneNumbers(limit, offset int) ([]PhoneNumber, error) {
+	rows, err := s.db.Query(`
+		SELECT sid, account_sid, phone_number, friendly_name, voice_url, voice_method,
+		       sms_url, sms_method, status_callback, status_callback_method, created_at, updated_at
+		FROM twilio_phone_numbers
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var phoneNumbers []PhoneNumber
+	for rows.Next() {
+		var pn PhoneNumber
+		err := rows.Scan(
+			&pn.Sid, &pn.AccountSid, &pn.PhoneNumber, &pn.FriendlyName,
+			&pn.VoiceURL, &pn.VoiceMethod, &pn.SmsURL, &pn.SmsMethod,
+			&pn.StatusCallback, &pn.StatusCallbackMethod, &pn.CreatedAt, &pn.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		phoneNumbers = append(phoneNumbers, pn)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return phoneNumbers, nil
+}

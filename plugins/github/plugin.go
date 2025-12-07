@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/2389/ish/plugins/core"
@@ -277,4 +278,201 @@ func (p *GitHubPlugin) SetDB(db *sql.DB) error {
 	}
 	p.store = store
 	return nil
+}
+
+// ListResources implements core.DataProvider to expose data to admin UI
+func (p *GitHubPlugin) ListResources(ctx context.Context, slug string, opts core.ListOptions) ([]map[string]interface{}, error) {
+	switch slug {
+	case "repositories":
+		repos, err := p.store.ListAllRepositories(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertRepositoriesToMaps(repos), nil
+	case "issues":
+		issues, err := p.store.ListAllIssues(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertIssuesToMaps(p.store, issues), nil
+	case "pull_requests":
+		prs, err := p.store.ListAllPullRequests(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertPullRequestsToMaps(p.store, prs), nil
+	case "webhooks":
+		webhooks, err := p.store.ListAllWebhooks(opts.Limit, opts.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return convertWebhooksToMaps(p.store, webhooks), nil
+	default:
+		return nil, fmt.Errorf("unknown resource: %s", slug)
+	}
+}
+
+// GetResource implements core.DataProvider to fetch individual resources
+func (p *GitHubPlugin) GetResource(ctx context.Context, slug string, id string) (map[string]interface{}, error) {
+	switch slug {
+	case "repositories":
+		// Parse ID as int64
+		var repoID int64
+		_, err := fmt.Sscanf(id, "%d", &repoID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid repository ID: %s", id)
+		}
+		// GetRepositoryByID would need to be added to store if needed
+		return nil, fmt.Errorf("get repository by ID not implemented")
+	case "issues":
+		var issueID int64
+		_, err := fmt.Sscanf(id, "%d", &issueID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid issue ID: %s", id)
+		}
+		// GetIssueByID would need to be added to store if needed
+		return nil, fmt.Errorf("get issue by ID not implemented")
+	case "pull_requests":
+		var prID int64
+		_, err := fmt.Sscanf(id, "%d", &prID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pull request ID: %s", id)
+		}
+		// GetPullRequestByID would need to be added to store if needed
+		return nil, fmt.Errorf("get pull request by ID not implemented")
+	case "webhooks":
+		var webhookID int64
+		_, err := fmt.Sscanf(id, "%d", &webhookID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid webhook ID: %s", id)
+		}
+		webhook, err := p.store.GetWebhook(webhookID)
+		if err != nil {
+			return nil, err
+		}
+		return convertWebhookToMap(p.store, *webhook), nil
+	default:
+		return nil, fmt.Errorf("unknown resource: %s", slug)
+	}
+}
+
+// Helper conversion functions
+
+func convertRepositoriesToMaps(repos []Repository) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(repos))
+	for _, repo := range repos {
+		result = append(result, convertRepositoryToMap(repo))
+	}
+	return result
+}
+
+func convertRepositoryToMap(repo Repository) map[string]interface{} {
+	m := map[string]interface{}{
+		"id":           fmt.Sprintf("%d", repo.ID),
+		"name":         repo.Name,
+		"full_name":    repo.FullName,
+		"owner":        fmt.Sprintf("%d", repo.OwnerID),
+		"description":  repo.Description,
+		"private":      fmt.Sprintf("%t", repo.Private),
+		"default_branch": repo.DefaultBranch,
+		"stars":        fmt.Sprintf("%d", repo.StargazersCount),
+		"forks":        fmt.Sprintf("%d", repo.ForksCount),
+		"issues_count": fmt.Sprintf("%d", repo.OpenIssuesCount),
+		"created_at":   repo.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+	return m
+}
+
+func convertIssuesToMaps(store *GitHubStore, issues []Issue) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(issues))
+	for _, issue := range issues {
+		result = append(result, convertIssueToMap(store, issue))
+	}
+	return result
+}
+
+func convertIssueToMap(store *GitHubStore, issue Issue) map[string]interface{} {
+	// Get repository name
+	repoName := fmt.Sprintf("%d", issue.RepoID)
+	// Get user login
+	userName := fmt.Sprintf("%d", issue.UserID)
+
+	m := map[string]interface{}{
+		"id":             fmt.Sprintf("%d", issue.ID),
+		"repo":           repoName,
+		"number":         fmt.Sprintf("%d", issue.Number),
+		"title":          issue.Title,
+		"body":           issue.Body,
+		"state":          issue.State,
+		"state_reason":   issue.StateReason,
+		"user":           userName,
+		"comments_count": fmt.Sprintf("%d", issue.CommentsCount),
+		"created_at":     issue.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+
+	if issue.ClosedAt != nil {
+		m["closed_at"] = issue.ClosedAt.Format("2006-01-02T15:04:05Z")
+	}
+
+	return m
+}
+
+func convertPullRequestsToMaps(store *GitHubStore, prs []PullRequest) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(prs))
+	for _, pr := range prs {
+		result = append(result, convertPullRequestToMap(store, pr))
+	}
+	return result
+}
+
+func convertPullRequestToMap(store *GitHubStore, pr PullRequest) map[string]interface{} {
+	// Get the issue details for this PR
+	issueID := pr.IssueID
+	repoName := fmt.Sprintf("%d", pr.BaseRepoID)
+
+	m := map[string]interface{}{
+		"id":       fmt.Sprintf("%d", issueID),
+		"repo":     repoName,
+		"number":   fmt.Sprintf("%d", issueID), // Issue ID as placeholder for number
+		"title":    "",                         // Would need to join with issues table
+		"body":     "",                         // Would need to join with issues table
+		"state":    "",                         // Would need to join with issues table
+		"merged":   fmt.Sprintf("%t", pr.Merged),
+		"draft":    fmt.Sprintf("%t", pr.Draft),
+		"head_ref": pr.HeadRef,
+		"base_ref": pr.BaseRef,
+		"user":     "",                         // Would need to join with issues table
+	}
+
+	if pr.MergedAt != nil {
+		m["merged_at"] = pr.MergedAt.Format("2006-01-02T15:04:05Z")
+	}
+
+	// Note: This is a simplified implementation
+	// A full implementation would join with github_issues table to get title, body, state, user, number, created_at
+
+	return m
+}
+
+func convertWebhooksToMaps(store *GitHubStore, webhooks []Webhook) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(webhooks))
+	for _, webhook := range webhooks {
+		result = append(result, convertWebhookToMap(store, webhook))
+	}
+	return result
+}
+
+func convertWebhookToMap(store *GitHubStore, webhook Webhook) map[string]interface{} {
+	repoName := fmt.Sprintf("%d", webhook.RepoID)
+
+	return map[string]interface{}{
+		"id":           fmt.Sprintf("%d", webhook.ID),
+		"repo":         repoName,
+		"url":          webhook.URL,
+		"content_type": webhook.ContentType,
+		"events":       webhook.Events,
+		"active":       fmt.Sprintf("%t", webhook.Active),
+		"created_at":   webhook.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		"updated_at":   webhook.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
 }

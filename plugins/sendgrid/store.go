@@ -395,3 +395,68 @@ func (s *SendGridStore) GetProductionAPIKey(accountID int64) (string, error) {
 
 	return apiKey, nil
 }
+
+// ListAllMessages retrieves messages across all accounts for admin view
+func (s *SendGridStore) ListAllMessages(limit, offset int) ([]*Message, error) {
+	rows, err := s.db.Query(`
+		SELECT id, account_id, from_email, from_name, to_email, to_name, subject, text_content, html_content, status, sent_at
+		FROM sendgrid_messages
+		ORDER BY sent_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []*Message
+	for rows.Next() {
+		var msg Message
+		err := rows.Scan(&msg.ID, &msg.AccountID, &msg.FromEmail, &msg.FromName,
+			&msg.ToEmail, &msg.ToName, &msg.Subject, &msg.TextContent, &msg.HTMLContent,
+			&msg.Status, &msg.SentAt)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, &msg)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+// ListAllSuppressions retrieves suppressions across all accounts for admin view
+func (s *SendGridStore) ListAllSuppressions(limit, offset int) ([]*Suppression, error) {
+	rows, err := s.db.Query(`
+		SELECT id, account_id, email, type, reason, created_at
+		FROM sendgrid_suppressions
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var suppressions []*Suppression
+	for rows.Next() {
+		var supp Suppression
+		err := rows.Scan(&supp.ID, &supp.AccountID, &supp.Email, &supp.Type,
+			&supp.Reason, &supp.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		suppressions = append(suppressions, &supp)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return suppressions, nil
+}

@@ -104,3 +104,33 @@ func (s *OAuthStore) ListTokens(pluginName string) ([]*OAuthToken, error) {
 	}
 	return tokens, nil
 }
+
+// ListAllTokens retrieves tokens across all users for admin view
+func (s *OAuthStore) ListAllTokens(limit, offset int) ([]*OAuthToken, error) {
+	rows, err := s.db.Query(`
+		SELECT token, plugin_name, user_id, COALESCE(scopes, ''), expires_at, COALESCE(refresh_token, ''), revoked, created_at
+		FROM oauth_tokens
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tokens []*OAuthToken
+	for rows.Next() {
+		t := &OAuthToken{}
+		if err := rows.Scan(&t.Token, &t.PluginName, &t.UserID, &t.Scopes, &t.ExpiresAt, &t.RefreshToken, &t.Revoked, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tokens, nil
+}
