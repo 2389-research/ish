@@ -359,12 +359,22 @@ func issueToResponse(issue *Issue, user *User, repo *Repository) map[string]inte
 		"comments":       issue.CommentsCount,
 		"created_at":     issue.CreatedAt.Format(time.RFC3339),
 		"updated_at":     issue.UpdatedAt.Format(time.RFC3339),
-		"user": map[string]interface{}{
+		"repository_url": fmt.Sprintf("/repos/%s", repo.FullName),
+	}
+
+	// Handle nil user gracefully (user might have been deleted)
+	if user != nil {
+		response["user"] = map[string]interface{}{
 			"login": user.Login,
 			"id":    user.ID,
 			"type":  user.Type,
-		},
-		"repository_url": fmt.Sprintf("/repos/%s", repo.FullName),
+		}
+	} else {
+		response["user"] = map[string]interface{}{
+			"login": "[deleted]",
+			"id":    0,
+			"type":  "User",
+		}
 	}
 
 	if issue.StateReason != "" {

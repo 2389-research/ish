@@ -19,13 +19,18 @@ import (
 // isPrivateIP checks if an IP address is private or internal
 // Resolves hostnames to IPs to prevent DNS rebinding attacks
 func isPrivateIP(host string) bool {
-	// Resolve hostname to IP addresses
+	// First check if it's a direct IP address (not a hostname)
+	if ip := net.ParseIP(host); ip != nil {
+		// Direct IP provided - check if it's private
+		return isPrivateIPAddress(ip)
+	}
+
+	// It's a hostname - resolve to IP addresses
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		// DNS resolution failed - this could be a temporary network issue
-		// For testing purposes and to avoid false positives, we'll allow it
-		// In production, you might want to be more strict
-		return false
+		// DNS resolution failed - block it to be safe
+		// This prevents bypass via non-resolving domains
+		return true
 	}
 
 	// Check all resolved IPs - if ANY resolve to private, block the whole hostname

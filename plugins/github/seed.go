@@ -310,12 +310,13 @@ func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 	}
 
 	// Create webhooks
+	// Using example.com which is a real, resolvable domain for testing
 	webhookURLs := []string{
-		"https://hooks.example.com/github/events",
-		"https://api.example.com/webhooks/github",
-		"https://ci.example.com/github/trigger",
-		"https://notify.example.com/github",
-		"https://slack.example.com/integrations/github",
+		"https://example.com/hooks/github/events",
+		"https://example.com/api/webhooks/github",
+		"https://example.com/ci/github/trigger",
+		"https://example.com/notify/github",
+		"https://example.com/slack/integrations/github",
 	}
 	eventTypes := [][]string{
 		{"push", "pull_request"},

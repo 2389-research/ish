@@ -326,9 +326,10 @@ func TestWebhookDelivery(t *testing.T) {
 	}
 
 	// Create webhook via API with external URL (SSRF protection allows this)
+	// Using example.com which is a real, resolvable domain
 	webhookBody := `{
 		"config": {
-			"url": "https://webhook.example.com/github",
+			"url": "https://example.com/github",
 			"content_type": "json",
 			"secret": "test-secret-123"
 		},
@@ -363,8 +364,8 @@ func TestWebhookDelivery(t *testing.T) {
 	}
 
 	config := webhookResp["config"].(map[string]interface{})
-	if config["url"] != "https://webhook.example.com/github" {
-		t.Fatalf("Expected URL 'https://webhook.example.com/github', got %v", config["url"])
+	if config["url"] != "https://example.com/github" {
+		t.Fatalf("Expected URL 'https://example.com/github', got %v", config["url"])
 	}
 	if config["content_type"] != "json" {
 		t.Fatalf("Expected content_type 'json', got %v", config["content_type"])
@@ -395,19 +396,23 @@ func TestWebhookDelivery(t *testing.T) {
 		t.Fatalf("Failed to create issue: %d - %s", w.Code, w.Body.String())
 	}
 
-	// Wait for async webhook delivery to complete
-	time.Sleep(100 * time.Millisecond)
-
-	// Step 3: Verify webhook delivery was logged in github_webhook_deliveries
-	// Note: The webhook will fail to deliver to example.com, but it should still log the attempt
+	// Step 3: Wait for async webhook delivery to complete (with polling)
+	// Poll for webhook delivery for up to 1 second
 	var deliveryCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM github_webhook_deliveries WHERE webhook_id = ?", webhookID).Scan(&deliveryCount)
-	if err != nil {
-		t.Fatalf("Failed to query webhook deliveries: %v", err)
+	maxAttempts := 20
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err = db.QueryRow("SELECT COUNT(*) FROM github_webhook_deliveries WHERE webhook_id = ?", webhookID).Scan(&deliveryCount)
+		if err != nil {
+			t.Fatalf("Failed to query webhook deliveries: %v", err)
+		}
+		if deliveryCount == 1 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	if deliveryCount != 1 {
-		t.Fatalf("Expected 1 webhook delivery logged, got %d", deliveryCount)
+		t.Fatalf("Expected 1 webhook delivery logged, got %d (waited %d ms)", deliveryCount, maxAttempts*50)
 	}
 
 	// Step 4: Verify delivery contains event information

@@ -1004,11 +1004,19 @@ func (s *GitHubStore) MergePullRequest(issueID, mergedByID int64) error {
 }
 
 // CreateComment creates a new comment and increments the issue's comments_count
+// Uses a transaction to ensure atomicity
 func (s *GitHubStore) CreateComment(issueID, userID int64, body string) (*Comment, error) {
+	// Start transaction for atomic insert + count update
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() // Will be no-op if tx.Commit() succeeds
+
 	now := time.Now()
 
 	// Insert the comment
-	result, err := s.db.Exec(`
+	result, err := tx.Exec(`
 		INSERT INTO github_comments (issue_id, user_id, body, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, issueID, userID, body, now, now)
@@ -1023,13 +1031,18 @@ func (s *GitHubStore) CreateComment(issueID, userID int64, body string) (*Commen
 	}
 
 	// Increment issue's comments_count
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		UPDATE github_issues
 		SET comments_count = comments_count + 1
 		WHERE id = ?
 	`, issueID)
 
 	if err != nil {
+		return nil, err
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -1102,10 +1115,18 @@ func (s *GitHubStore) UpdateComment(comment *Comment) error {
 }
 
 // DeleteComment deletes a comment (hard delete) and decrements the issue's comment count
+// Uses a transaction to ensure atomicity
 func (s *GitHubStore) DeleteComment(commentID int64) error {
-	// First, get the issue_id for this comment
+	// Start transaction for atomic delete + count update
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // Will be no-op if tx.Commit() succeeds
+
+	// Get the issue_id for this comment
 	var issueID int64
-	err := s.db.QueryRow(`
+	err = tx.QueryRow(`
 		SELECT issue_id FROM github_comments WHERE id = ?
 	`, commentID).Scan(&issueID)
 
@@ -1114,7 +1135,7 @@ func (s *GitHubStore) DeleteComment(commentID int64) error {
 	}
 
 	// Delete the comment
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		DELETE FROM github_comments
 		WHERE id = ?
 	`, commentID)
@@ -1124,7 +1145,7 @@ func (s *GitHubStore) DeleteComment(commentID int64) error {
 	}
 
 	// Decrement the issue's comments_count
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		UPDATE github_issues
 		SET comments_count = CASE
 			WHEN comments_count > 0 THEN comments_count - 1
@@ -1133,7 +1154,11 @@ func (s *GitHubStore) DeleteComment(commentID int64) error {
 		WHERE id = ?
 	`, issueID)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // generateCommitSHA creates a fake 40-character hex SHA for reviews
@@ -1414,6 +1439,20 @@ func (s *GitHubStore) CreateWebhookDelivery(webhookID int64, eventType, payload 
 	return err
 }
 
+// eventMatches checks if an event type matches any event in a comma-separated list
+// Returns true if the eventType exactly matches one of the events in the list
+func eventMatches(eventsList, eventType string) bool {
+	// Split by comma and check for exact matches
+	events := strings.Split(eventsList, ",")
+	for _, event := range events {
+		// Trim whitespace and compare
+		if strings.TrimSpace(event) == eventType {
+			return true
+		}
+	}
+	return false
+}
+
 // GetActiveWebhooksForEvent gets all active webhooks for a repo that subscribe to an event
 func (s *GitHubStore) GetActiveWebhooksForEvent(repoID int64, eventType string) ([]*Webhook, error) {
 	rows, err := s.db.Query(`
@@ -1446,7 +1485,8 @@ func (s *GitHubStore) GetActiveWebhooksForEvent(repoID int64, eventType string) 
 
 		// Check if this webhook subscribes to this event type
 		// Events are stored as comma-separated list
-		if webhook.Events == "" || strings.Contains(webhook.Events, eventType) {
+		// Empty Events means subscribe to all events
+		if webhook.Events == "" || eventMatches(webhook.Events, eventType) {
 			webhooks = append(webhooks, &webhook)
 		}
 	}
