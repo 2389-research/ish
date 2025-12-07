@@ -95,6 +95,15 @@ type PullRequest struct {
 	ChangedFiles          int
 }
 
+type Comment struct {
+	ID        int64
+	IssueID   int64
+	UserID    int64
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 func NewGitHubStore(db *sql.DB) (*GitHubStore, error) {
 	store := &GitHubStore{db: db}
 	if err := store.initTables(); err != nil {
@@ -893,6 +902,114 @@ func (s *GitHubStore) MergePullRequest(issueID, mergedByID int64) error {
 		SET state = 'closed', closed_at = ?, updated_at = ?
 		WHERE id = ?
 	`, now, now, issueID)
+
+	return err
+}
+
+// CreateComment creates a new comment and increments the issue's comments_count
+func (s *GitHubStore) CreateComment(issueID, userID int64, body string) (*Comment, error) {
+	now := time.Now()
+
+	// Insert the comment
+	result, err := s.db.Exec(`
+		INSERT INTO github_comments (issue_id, user_id, body, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, issueID, userID, body, now, now)
+
+	if err != nil {
+		return nil, err
+	}
+
+	commentID, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	// Increment issue's comments_count
+	_, err = s.db.Exec(`
+		UPDATE github_issues
+		SET comments_count = comments_count + 1
+		WHERE id = ?
+	`, issueID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &Comment{
+		ID:        commentID,
+		IssueID:   issueID,
+		UserID:    userID,
+		Body:      body,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
+// GetComment gets a comment by ID
+func (s *GitHubStore) GetComment(commentID int64) (*Comment, error) {
+	var comment Comment
+
+	err := s.db.QueryRow(`
+		SELECT id, issue_id, user_id, body, created_at, updated_at
+		FROM github_comments
+		WHERE id = ?
+	`, commentID).Scan(&comment.ID, &comment.IssueID, &comment.UserID, &comment.Body, &comment.CreatedAt, &comment.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &comment, nil
+}
+
+// ListComments lists all comments for an issue/PR
+func (s *GitHubStore) ListComments(issueID int64) ([]*Comment, error) {
+	rows, err := s.db.Query(`
+		SELECT id, issue_id, user_id, body, created_at, updated_at
+		FROM github_comments
+		WHERE issue_id = ?
+		ORDER BY created_at ASC
+	`, issueID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var comments []*Comment
+	for rows.Next() {
+		var comment Comment
+		err := rows.Scan(&comment.ID, &comment.IssueID, &comment.UserID, &comment.Body, &comment.CreatedAt, &comment.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		comments = append(comments, &comment)
+	}
+
+	return comments, rows.Err()
+}
+
+// UpdateComment updates a comment's body and updated_at timestamp
+func (s *GitHubStore) UpdateComment(comment *Comment) error {
+	now := time.Now()
+	comment.UpdatedAt = now
+
+	_, err := s.db.Exec(`
+		UPDATE github_comments
+		SET body = ?, updated_at = ?
+		WHERE id = ?
+	`, comment.Body, comment.UpdatedAt, comment.ID)
+
+	return err
+}
+
+// DeleteComment deletes a comment (hard delete)
+func (s *GitHubStore) DeleteComment(commentID int64) error {
+	_, err := s.db.Exec(`
+		DELETE FROM github_comments
+		WHERE id = ?
+	`, commentID)
 
 	return err
 }

@@ -579,3 +579,199 @@ func pullRequestToResponse(issue *Issue, pr *PullRequest, user *User, repo *Repo
 
 	return response
 }
+
+// createComment handles POST /repos/{owner}/{repo}/issues/{number}/comments
+func (p *GitHubPlugin) createComment(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(*User)
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	var req struct {
+		Body string `json:"body"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Body == "" {
+		writeError(w, http.StatusBadRequest, "body is required")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var issueNum int
+	if _, err := fmt.Sscanf(number, "%d", &issueNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid issue number")
+		return
+	}
+
+	// Get issue to verify it exists
+	issue, err := p.store.GetIssueByNumber(repo.ID, issueNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+
+	// Create comment
+	comment, err := p.store.CreateComment(issue.ID, user.ID, req.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create comment")
+		return
+	}
+
+	response := commentToResponse(comment, user)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// listComments handles GET /repos/{owner}/{repo}/issues/{number}/comments
+func (p *GitHubPlugin) listComments(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var issueNum int
+	if _, err := fmt.Sscanf(number, "%d", &issueNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid issue number")
+		return
+	}
+
+	// Get issue to verify it exists
+	issue, err := p.store.GetIssueByNumber(repo.ID, issueNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+
+	// List comments
+	comments, err := p.store.ListComments(issue.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list comments")
+		return
+	}
+
+	var response []map[string]interface{}
+	for _, comment := range comments {
+		commentUser, _ := p.store.GetUserByID(comment.UserID)
+		response = append(response, commentToResponse(comment, commentUser))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// updateComment handles PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
+func (p *GitHubPlugin) updateComment(w http.ResponseWriter, r *http.Request) {
+	commentID := chi.URLParam(r, "comment_id")
+
+	var req struct {
+		Body string `json:"body"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Body == "" {
+		writeError(w, http.StatusBadRequest, "body is required")
+		return
+	}
+
+	// Parse comment ID
+	var id int64
+	if _, err := fmt.Sscanf(commentID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid comment id")
+		return
+	}
+
+	// Get comment
+	comment, err := p.store.GetComment(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "comment not found")
+		return
+	}
+
+	// Update comment
+	comment.Body = req.Body
+	if err := p.store.UpdateComment(comment); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update comment")
+		return
+	}
+
+	// Get user for response
+	commentUser, _ := p.store.GetUserByID(comment.UserID)
+	response := commentToResponse(comment, commentUser)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// deleteComment handles DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
+func (p *GitHubPlugin) deleteComment(w http.ResponseWriter, r *http.Request) {
+	commentID := chi.URLParam(r, "comment_id")
+
+	// Parse comment ID
+	var id int64
+	if _, err := fmt.Sscanf(commentID, "%d", &id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid comment id")
+		return
+	}
+
+	// Verify comment exists
+	_, err := p.store.GetComment(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "comment not found")
+		return
+	}
+
+	// Delete comment
+	if err := p.store.DeleteComment(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete comment")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// commentToResponse converts Comment to GitHub API response format
+func commentToResponse(comment *Comment, user *User) map[string]interface{} {
+	response := map[string]interface{}{
+		"id":         comment.ID,
+		"body":       comment.Body,
+		"created_at": comment.CreatedAt.Format(time.RFC3339),
+		"updated_at": comment.UpdatedAt.Format(time.RFC3339),
+	}
+
+	if user != nil {
+		response["user"] = map[string]interface{}{
+			"login": user.Login,
+			"id":    user.ID,
+			"type":  user.Type,
+		}
+	}
+
+	return response
+}

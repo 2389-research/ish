@@ -521,3 +521,192 @@ func TestMergePullRequest(t *testing.T) {
 		t.Fatal("ClosedAt should be set")
 	}
 }
+
+func TestCreateComment(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and issue
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _ := store.CreateIssue(repo.ID, user.ID, "Test Issue", "Body", false)
+
+	// Verify initial comments_count is 0
+	if issue.CommentsCount != 0 {
+		t.Fatalf("Expected comments_count 0, got %d", issue.CommentsCount)
+	}
+
+	body := `{"body": "This is a test comment"}`
+	req := httptest.NewRequest("POST", "/repos/alice/test-repo/issues/1/comments", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.createComment)
+	handler(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["body"] != "This is a test comment" {
+		t.Fatalf("Expected body 'This is a test comment', got %v", resp["body"])
+	}
+	if resp["user"].(map[string]interface{})["login"] != "alice" {
+		t.Fatalf("Expected user login 'alice', got %v", resp["user"])
+	}
+
+	// Verify comments_count was incremented
+	updatedIssue, _ := store.GetIssueByNumber(repo.ID, int(issue.Number))
+	if updatedIssue.CommentsCount != 1 {
+		t.Fatalf("Expected comments_count 1, got %d", updatedIssue.CommentsCount)
+	}
+}
+
+func TestListComments(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, issue, and comments
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _ := store.CreateIssue(repo.ID, user.ID, "Test Issue", "Body", false)
+
+	// Create 3 comments
+	store.CreateComment(issue.ID, user.ID, "First comment")
+	store.CreateComment(issue.ID, user.ID, "Second comment")
+	store.CreateComment(issue.ID, user.ID, "Third comment")
+
+	req := httptest.NewRequest("GET", "/repos/alice/test-repo/issues/1/comments", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.listComments)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp) != 3 {
+		t.Fatalf("Expected 3 comments, got %d", len(resp))
+	}
+
+	// Verify comments are in order
+	if resp[0]["body"] != "First comment" {
+		t.Fatalf("Expected first comment body 'First comment', got %v", resp[0]["body"])
+	}
+	if resp[1]["body"] != "Second comment" {
+		t.Fatalf("Expected second comment body 'Second comment', got %v", resp[1]["body"])
+	}
+	if resp[2]["body"] != "Third comment" {
+		t.Fatalf("Expected third comment body 'Third comment', got %v", resp[2]["body"])
+	}
+}
+
+func TestUpdateComment(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, issue, and comment
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _ := store.CreateIssue(repo.ID, user.ID, "Test Issue", "Body", false)
+	comment, _ := store.CreateComment(issue.ID, user.ID, "Original comment")
+
+	body := `{"body": "Updated comment"}`
+	req := httptest.NewRequest("PATCH", "/repos/alice/test-repo/issues/comments/1", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("comment_id", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.updateComment)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["body"] != "Updated comment" {
+		t.Fatalf("Expected body 'Updated comment', got %v", resp["body"])
+	}
+
+	// Verify in database
+	updatedComment, _ := store.GetComment(comment.ID)
+	if updatedComment.Body != "Updated comment" {
+		t.Fatalf("Expected database body 'Updated comment', got %s", updatedComment.Body)
+	}
+}
+
+func TestDeleteComment(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, issue, and comment
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _ := store.CreateIssue(repo.ID, user.ID, "Test Issue", "Body", false)
+	comment, _ := store.CreateComment(issue.ID, user.ID, "Comment to delete")
+
+	req := httptest.NewRequest("DELETE", "/repos/alice/test-repo/issues/comments/1", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("comment_id", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.deleteComment)
+	handler(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify comment was deleted from database
+	_, err := store.GetComment(comment.ID)
+	if err == nil {
+		t.Fatal("Expected error getting deleted comment")
+	}
+}
