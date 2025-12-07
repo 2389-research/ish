@@ -290,3 +290,234 @@ func TestUpdateIssueState(t *testing.T) {
 		t.Fatal("ClosedAt should be set")
 	}
 }
+
+func TestCreatePullRequest(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user and repo
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+
+	body := `{"title": "Add feature X", "body": "This PR adds feature X", "head": "feature-x", "base": "main"}`
+	req := httptest.NewRequest("POST", "/repos/alice/test-repo/pulls", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.createPullRequest)
+	handler(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["number"] != float64(1) {
+		t.Fatalf("Expected number 1, got %v", resp["number"])
+	}
+	if resp["title"] != "Add feature X" {
+		t.Fatalf("Expected title, got %v", resp["title"])
+	}
+	if resp["state"] != "open" {
+		t.Fatalf("Expected state 'open', got %v", resp["state"])
+	}
+
+	// Check PR-specific fields
+	head := resp["head"].(map[string]interface{})
+	if head["ref"] != "feature-x" {
+		t.Fatalf("Expected head ref 'feature-x', got %v", head["ref"])
+	}
+	base := resp["base"].(map[string]interface{})
+	if base["ref"] != "main" {
+		t.Fatalf("Expected base ref 'main', got %v", base["ref"])
+	}
+	if resp["merged"] != false {
+		t.Fatalf("Expected merged false, got %v", resp["merged"])
+	}
+
+	// Verify in database - should create both issue and PR record
+	issue, err := store.GetIssueByNumber(repo.ID, 1)
+	if err != nil {
+		t.Fatalf("Issue not found: %v", err)
+	}
+	if !issue.IsPullRequest {
+		t.Fatal("Issue should be marked as pull request")
+	}
+
+	_, pr, err := store.GetPullRequest(repo.ID, 1)
+	if err != nil {
+		t.Fatalf("PR not found: %v", err)
+	}
+	if pr.HeadRef != "feature-x" {
+		t.Fatalf("Expected head ref 'feature-x', got '%s'", pr.HeadRef)
+	}
+	if pr.BaseRef != "main" {
+		t.Fatalf("Expected base ref 'main', got '%s'", pr.BaseRef)
+	}
+}
+
+func TestListPullRequests(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and PRs
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+
+	// Create a regular issue and two PRs
+	store.CreateIssue(repo.ID, user.ID, "Regular issue", "Not a PR", false)
+	store.CreatePullRequest(repo.ID, user.ID, "PR 1", "Body 1", "feature-1", "main")
+	store.CreatePullRequest(repo.ID, user.ID, "PR 2", "Body 2", "feature-2", "main")
+
+	req := httptest.NewRequest("GET", "/repos/alice/test-repo/pulls", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.listPullRequests)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var prs []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &prs)
+
+	// Should only return the 2 PRs, not the regular issue
+	if len(prs) != 2 {
+		t.Fatalf("Expected 2 PRs, got %d", len(prs))
+	}
+
+	// Verify numbers are 2 and 3 (issue #1 was the regular issue)
+	if prs[1]["number"] != float64(2) {
+		t.Fatalf("Expected PR number 2, got %v", prs[1]["number"])
+	}
+	if prs[0]["number"] != float64(3) {
+		t.Fatalf("Expected PR number 3, got %v", prs[0]["number"])
+	}
+}
+
+func TestGetPullRequest(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and PR
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+
+	req := httptest.NewRequest("GET", "/repos/alice/test-repo/pulls/1", nil)
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.getPullRequest)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["number"] != float64(1) {
+		t.Fatalf("Expected number 1, got %v", resp["number"])
+	}
+	if resp["title"] != "Test PR" {
+		t.Fatalf("Expected title 'Test PR', got %v", resp["title"])
+	}
+
+	head := resp["head"].(map[string]interface{})
+	if head["ref"] != "feature" {
+		t.Fatalf("Expected head ref 'feature', got %v", head["ref"])
+	}
+}
+
+func TestMergePullRequest(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store, _ := NewGitHubStore(db)
+	plugin := &GitHubPlugin{store: store}
+
+	// Create user, repo, and PR
+	user, _ := store.GetOrCreateUser("alice", "ghp_test")
+	repo, _ := store.CreateRepository(user.ID, "test-repo", "", false)
+	issue, _, _ := store.CreatePullRequest(repo.ID, user.ID, "Test PR", "Body", "feature", "main")
+
+	body := `{"commit_message": "Merge pull request #1"}`
+	req := httptest.NewRequest("PUT", "/repos/alice/test-repo/pulls/1/merge", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer ghp_test")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	// Setup chi context
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("owner", "alice")
+	rctx.URLParams.Add("repo", "test-repo")
+	rctx.URLParams.Add("number", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	handler := plugin.requireAuth(plugin.mergePullRequest)
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["merged"] != true {
+		t.Fatalf("Expected merged true, got %v", resp["merged"])
+	}
+
+	// Verify in database
+	updatedIssue, pr, _ := store.GetPullRequest(repo.ID, int(issue.Number))
+
+	// PR should be marked as merged
+	if !pr.Merged {
+		t.Fatal("PR should be marked as merged")
+	}
+	if pr.MergedAt == nil {
+		t.Fatal("MergedAt should be set")
+	}
+	if pr.MergedByID == nil || *pr.MergedByID != user.ID {
+		t.Fatalf("MergedByID should be set to %d, got %v", user.ID, pr.MergedByID)
+	}
+
+	// Issue should be closed
+	if updatedIssue.State != "closed" {
+		t.Fatalf("Issue state should be 'closed', got '%s'", updatedIssue.State)
+	}
+	if updatedIssue.ClosedAt == nil {
+		t.Fatal("ClosedAt should be set")
+	}
+}

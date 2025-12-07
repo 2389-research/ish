@@ -75,6 +75,26 @@ type Issue struct {
 	ClosedAt      *time.Time
 }
 
+type PullRequest struct {
+	IssueID               int64
+	HeadRepoID            int64
+	HeadRef               string
+	BaseRepoID            int64
+	BaseRef               string
+	Merged                bool
+	Mergeable             bool
+	Rebaseable            bool
+	MergeCommitSHA        string
+	MergedAt              *time.Time
+	MergedByID            *int64
+	Draft                 bool
+	ReviewCommentsCount   int
+	CommitsCount          int
+	Additions             int
+	Deletions             int
+	ChangedFiles          int
+}
+
 func NewGitHubStore(db *sql.DB) (*GitHubStore, error) {
 	store := &GitHubStore{db: db}
 	if err := store.initTables(); err != nil {
@@ -762,6 +782,117 @@ func (s *GitHubStore) UpdateIssue(issue *Issue) error {
 		SET title = ?, body = ?, state = ?, state_reason = ?, updated_at = ?, closed_at = ?
 		WHERE id = ?
 	`, issue.Title, issue.Body, issue.State, issue.StateReason, issue.UpdatedAt, issue.ClosedAt, issue.ID)
+
+	return err
+}
+
+// CreatePullRequest creates a new pull request (issue + PR record)
+func (s *GitHubStore) CreatePullRequest(repoID, userID int64, title, body, headRef, baseRef string) (*Issue, *PullRequest, error) {
+	// Create the issue first with is_pull_request=1
+	issue, err := s.CreateIssue(repoID, userID, title, body, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Create the PR record
+	_, err = s.db.Exec(`
+		INSERT INTO github_pull_requests (issue_id, head_repo_id, head_ref, base_repo_id, base_ref, merged, mergeable, rebaseable)
+		VALUES (?, ?, ?, ?, ?, 0, 1, 1)
+	`, issue.ID, repoID, headRef, repoID, baseRef)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pr := &PullRequest{
+		IssueID:    issue.ID,
+		HeadRepoID: repoID,
+		HeadRef:    headRef,
+		BaseRepoID: repoID,
+		BaseRef:    baseRef,
+		Merged:     false,
+		Mergeable:  true,
+		Rebaseable: true,
+	}
+
+	return issue, pr, nil
+}
+
+// GetPullRequest gets a pull request by repo ID and number
+func (s *GitHubStore) GetPullRequest(repoID int64, number int) (*Issue, *PullRequest, error) {
+	// Get the issue first
+	issue, err := s.GetIssueByNumber(repoID, number)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if !issue.IsPullRequest {
+		return nil, nil, fmt.Errorf("issue #%d is not a pull request", number)
+	}
+
+	// Get the PR data
+	var pr PullRequest
+	var mergeCommitSHA sql.NullString
+	var mergedAt sql.NullTime
+	var mergedByID sql.NullInt64
+
+	err = s.db.QueryRow(`
+		SELECT issue_id, head_repo_id, head_ref, base_repo_id, base_ref, merged, mergeable, rebaseable,
+			merge_commit_sha, merged_at, merged_by_id, draft, review_comments_count, commits_count,
+			additions, deletions, changed_files
+		FROM github_pull_requests
+		WHERE issue_id = ?
+	`, issue.ID).Scan(
+		&pr.IssueID, &pr.HeadRepoID, &pr.HeadRef, &pr.BaseRepoID, &pr.BaseRef, &pr.Merged, &pr.Mergeable, &pr.Rebaseable,
+		&mergeCommitSHA, &mergedAt, &mergedByID, &pr.Draft, &pr.ReviewCommentsCount, &pr.CommitsCount,
+		&pr.Additions, &pr.Deletions, &pr.ChangedFiles,
+	)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if mergeCommitSHA.Valid {
+		pr.MergeCommitSHA = mergeCommitSHA.String
+	}
+	if mergedAt.Valid {
+		pr.MergedAt = &mergedAt.Time
+	}
+	if mergedByID.Valid {
+		id := mergedByID.Int64
+		pr.MergedByID = &id
+	}
+
+	return issue, &pr, nil
+}
+
+// ListPullRequests lists pull requests for a repository
+func (s *GitHubStore) ListPullRequests(repoID int64, state string) ([]*Issue, error) {
+	// List issues where is_pull_request=1
+	return s.ListIssues(repoID, state, true)
+}
+
+// MergePullRequest marks a PR as merged and closes the issue
+func (s *GitHubStore) MergePullRequest(issueID, mergedByID int64) error {
+	now := time.Now()
+
+	// Update the PR record
+	_, err := s.db.Exec(`
+		UPDATE github_pull_requests
+		SET merged = 1, merged_at = ?, merged_by_id = ?
+		WHERE issue_id = ?
+	`, now, mergedByID, issueID)
+
+	if err != nil {
+		return err
+	}
+
+	// Close the issue
+	_, err = s.db.Exec(`
+		UPDATE github_issues
+		SET state = 'closed', closed_at = ?, updated_at = ?
+		WHERE id = ?
+	`, now, now, issueID)
 
 	return err
 }

@@ -348,3 +348,234 @@ func issueToResponse(issue *Issue, user *User, repo *Repository) map[string]inte
 
 	return response
 }
+
+// createPullRequest handles POST /repos/{owner}/{repo}/pulls
+func (p *GitHubPlugin) createPullRequest(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(*User)
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+
+	var req struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Head  string `json:"head"`
+		Base  string `json:"base"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	if req.Head == "" {
+		writeError(w, http.StatusBadRequest, "head is required")
+		return
+	}
+	if req.Base == "" {
+		writeError(w, http.StatusBadRequest, "base is required")
+		return
+	}
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	issue, pr, err := p.store.CreatePullRequest(repo.ID, user.ID, req.Title, req.Body, req.Head, req.Base)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create pull request")
+		return
+	}
+
+	response := pullRequestToResponse(issue, pr, user, repo)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// listPullRequests handles GET /repos/{owner}/{repo}/pulls
+func (p *GitHubPlugin) listPullRequests(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	state := r.URL.Query().Get("state") // open, closed, all
+
+	issues, err := p.store.ListPullRequests(repo.ID, state)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
+		return
+	}
+
+	var response []map[string]interface{}
+	for _, issue := range issues {
+		issueUser, _ := p.store.GetUserByID(issue.UserID)
+		_, pr, err := p.store.GetPullRequest(repo.ID, int(issue.Number))
+		if err != nil {
+			continue
+		}
+		response = append(response, pullRequestToResponse(issue, pr, issueUser, repo))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getPullRequest handles GET /repos/{owner}/{repo}/pulls/{number}
+func (p *GitHubPlugin) getPullRequest(w http.ResponseWriter, r *http.Request) {
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var prNum int
+	if _, err := fmt.Sscanf(number, "%d", &prNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid pull request number")
+		return
+	}
+
+	issue, pr, err := p.store.GetPullRequest(repo.ID, prNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "pull request not found")
+		return
+	}
+
+	issueUser, _ := p.store.GetUserByID(issue.UserID)
+	response := pullRequestToResponse(issue, pr, issueUser, repo)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// mergePullRequest handles PUT /repos/{owner}/{repo}/pulls/{number}/merge
+func (p *GitHubPlugin) mergePullRequest(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(*User)
+	owner := chi.URLParam(r, "owner")
+	repoName := chi.URLParam(r, "repo")
+	number := chi.URLParam(r, "number")
+
+	// Get repository
+	fullName := owner + "/" + repoName
+	repo, err := p.store.GetRepositoryByFullName(fullName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+
+	// Parse number
+	var prNum int
+	if _, err := fmt.Sscanf(number, "%d", &prNum); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid pull request number")
+		return
+	}
+
+	issue, pr, err := p.store.GetPullRequest(repo.ID, prNum)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "pull request not found")
+		return
+	}
+
+	if pr.Merged {
+		writeError(w, http.StatusMethodNotAllowed, "pull request already merged")
+		return
+	}
+
+	if err := p.store.MergePullRequest(issue.ID, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to merge pull request")
+		return
+	}
+
+	// Reload PR to get updated data
+	issue, pr, _ = p.store.GetPullRequest(repo.ID, prNum)
+	issueUser, _ := p.store.GetUserByID(issue.UserID)
+	response := pullRequestToResponse(issue, pr, issueUser, repo)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// pullRequestToResponse converts Issue + PullRequest to GitHub API response format
+func pullRequestToResponse(issue *Issue, pr *PullRequest, user *User, repo *Repository) map[string]interface{} {
+	response := map[string]interface{}{
+		"id":         issue.ID,
+		"number":     issue.Number,
+		"title":      issue.Title,
+		"body":       issue.Body,
+		"state":      issue.State,
+		"locked":     issue.Locked,
+		"created_at": issue.CreatedAt.Format(time.RFC3339),
+		"updated_at": issue.UpdatedAt.Format(time.RFC3339),
+		"user": map[string]interface{}{
+			"login": user.Login,
+			"id":    user.ID,
+			"type":  user.Type,
+		},
+		"head": map[string]interface{}{
+			"ref": pr.HeadRef,
+			"repo": map[string]interface{}{
+				"id":        repo.ID,
+				"name":      repo.Name,
+				"full_name": repo.FullName,
+			},
+		},
+		"base": map[string]interface{}{
+			"ref": pr.BaseRef,
+			"repo": map[string]interface{}{
+				"id":        repo.ID,
+				"name":      repo.Name,
+				"full_name": repo.FullName,
+			},
+		},
+		"merged":     pr.Merged,
+		"mergeable":  pr.Mergeable,
+		"rebaseable": pr.Rebaseable,
+		"draft":      pr.Draft,
+	}
+
+	if issue.StateReason != "" {
+		response["state_reason"] = issue.StateReason
+	}
+
+	if issue.ClosedAt != nil {
+		response["closed_at"] = issue.ClosedAt.Format(time.RFC3339)
+	}
+
+	if pr.MergedAt != nil {
+		response["merged_at"] = pr.MergedAt.Format(time.RFC3339)
+	}
+
+	if pr.MergedByID != nil {
+		response["merged_by"] = map[string]interface{}{
+			"id": *pr.MergedByID,
+		}
+	}
+
+	if pr.MergeCommitSHA != "" {
+		response["merge_commit_sha"] = pr.MergeCommitSHA
+	}
+
+	return response
+}
