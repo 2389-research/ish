@@ -62,6 +62,17 @@ func (p *GitHubPlugin) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// getUserFromContext safely extracts the authenticated user from request context
+// Returns the user and true if found, or nil and false if not present or wrong type
+func getUserFromContext(r *http.Request) (*User, bool) {
+	val := r.Context().Value(userContextKey)
+	if val == nil {
+		return nil, false
+	}
+	user, ok := val.(*User)
+	return user, ok
+}
+
 // writeError writes a GitHub-style JSON error response
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")

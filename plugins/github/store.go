@@ -653,10 +653,18 @@ func (s *GitHubStore) ListUserRepositories(ownerID int64) ([]*Repository, error)
 }
 
 // CreateIssue creates a new issue with auto-incrementing number per repo
+// Uses a transaction to prevent race conditions in number assignment
 func (s *GitHubStore) CreateIssue(repoID, userID int64, title, body string, isPR bool) (*Issue, error) {
-	// Get next issue number for this repo
+	// Start transaction for atomic number assignment
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() // Will be no-op if tx.Commit() succeeds
+
+	// Get next issue number for this repo (within transaction)
 	var maxNumber sql.NullInt64
-	err := s.db.QueryRow(`SELECT MAX(number) FROM github_issues WHERE repo_id = ?`, repoID).Scan(&maxNumber)
+	err = tx.QueryRow(`SELECT MAX(number) FROM github_issues WHERE repo_id = ?`, repoID).Scan(&maxNumber)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
@@ -672,7 +680,8 @@ func (s *GitHubStore) CreateIssue(repoID, userID int64, title, body string, isPR
 		isPRInt = 1
 	}
 
-	result, err := s.db.Exec(`
+	// Insert issue with the calculated number
+	result, err := tx.Exec(`
 		INSERT INTO github_issues (repo_id, number, title, body, state, user_id, is_pull_request, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)
 	`, repoID, number, title, body, userID, isPRInt, now, now)
@@ -683,6 +692,11 @@ func (s *GitHubStore) CreateIssue(repoID, userID int64, title, body string, isPR
 
 	id, err := result.LastInsertId()
 	if err != nil {
+		return nil, err
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -829,26 +843,75 @@ func (s *GitHubStore) UpdateIssue(issue *Issue) error {
 	return err
 }
 
-// CreatePullRequest creates a new pull request (issue + PR record)
+// CreatePullRequest creates a new pull request (issue + PR record) atomically
+// Uses a transaction to ensure both the issue and PR are created together
 func (s *GitHubStore) CreatePullRequest(repoID, userID int64, title, body, headRef, baseRef string) (*Issue, *PullRequest, error) {
-	// Create the issue first with is_pull_request=1
-	issue, err := s.CreateIssue(repoID, userID, title, body, true)
+	// Start transaction for atomic PR+Issue creation
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback() // Will be no-op if tx.Commit() succeeds
+
+	// Get next issue number for this repo (within transaction)
+	var maxNumber sql.NullInt64
+	err = tx.QueryRow(`SELECT MAX(number) FROM github_issues WHERE repo_id = ?`, repoID).Scan(&maxNumber)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, nil, err
+	}
+
+	number := int64(1)
+	if maxNumber.Valid {
+		number = maxNumber.Int64 + 1
+	}
+
+	now := time.Now()
+
+	// Create the issue with is_pull_request=1
+	result, err := tx.Exec(`
+		INSERT INTO github_issues (repo_id, number, title, body, state, user_id, is_pull_request, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', ?, 1, ?, ?)
+	`, repoID, number, title, body, userID, now, now)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	issueID, err := result.LastInsertId()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Create the PR record
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO github_pull_requests (issue_id, head_repo_id, head_ref, base_repo_id, base_ref, merged, mergeable, rebaseable)
 		VALUES (?, ?, ?, ?, ?, 0, 1, 1)
-	`, issue.ID, repoID, headRef, repoID, baseRef)
+	`, issueID, repoID, headRef, repoID, baseRef)
 
 	if err != nil {
 		return nil, nil, err
 	}
 
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+
+	issue := &Issue{
+		ID:            issueID,
+		RepoID:        repoID,
+		Number:        number,
+		Title:         title,
+		Body:          body,
+		State:         "open",
+		UserID:        userID,
+		IsPullRequest: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
 	pr := &PullRequest{
-		IssueID:    issue.ID,
+		IssueID:    issueID,
 		HeadRepoID: repoID,
 		HeadRef:    headRef,
 		BaseRepoID: repoID,
@@ -1038,12 +1101,37 @@ func (s *GitHubStore) UpdateComment(comment *Comment) error {
 	return err
 }
 
-// DeleteComment deletes a comment (hard delete)
+// DeleteComment deletes a comment (hard delete) and decrements the issue's comment count
 func (s *GitHubStore) DeleteComment(commentID int64) error {
-	_, err := s.db.Exec(`
+	// First, get the issue_id for this comment
+	var issueID int64
+	err := s.db.QueryRow(`
+		SELECT issue_id FROM github_comments WHERE id = ?
+	`, commentID).Scan(&issueID)
+
+	if err != nil {
+		return err
+	}
+
+	// Delete the comment
+	_, err = s.db.Exec(`
 		DELETE FROM github_comments
 		WHERE id = ?
 	`, commentID)
+
+	if err != nil {
+		return err
+	}
+
+	// Decrement the issue's comments_count
+	_, err = s.db.Exec(`
+		UPDATE github_issues
+		SET comments_count = CASE
+			WHEN comments_count > 0 THEN comments_count - 1
+			ELSE 0
+		END
+		WHERE id = ?
+	`, issueID)
 
 	return err
 }

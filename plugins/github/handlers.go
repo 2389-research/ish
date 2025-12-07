@@ -15,7 +15,11 @@ import (
 
 // getAuthenticatedUser handles GET /user
 func (p *GitHubPlugin) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 
 	response := map[string]interface{}{
 		"login":      user.Login,
@@ -34,7 +38,11 @@ func (p *GitHubPlugin) getAuthenticatedUser(w http.ResponseWriter, r *http.Reque
 
 // createUserRepository handles POST /user/repos
 func (p *GitHubPlugin) createUserRepository(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 
 	var req struct {
 		Name        string `json:"name"`
@@ -67,7 +75,11 @@ func (p *GitHubPlugin) createUserRepository(w http.ResponseWriter, r *http.Reque
 
 // listAuthenticatedUserRepositories handles GET /user/repos
 func (p *GitHubPlugin) listAuthenticatedUserRepositories(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 
 	repos, err := p.store.ListUserRepositories(user.ID)
 	if err != nil {
@@ -143,7 +155,11 @@ func repositoryToResponse(repo *Repository, owner *User) map[string]interface{} 
 
 // createIssue handles POST /repos/{owner}/{repo}/issues
 func (p *GitHubPlugin) createIssue(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 	owner := chi.URLParam(r, "owner")
 	repoName := chi.URLParam(r, "repo")
 
@@ -364,7 +380,11 @@ func issueToResponse(issue *Issue, user *User, repo *Repository) map[string]inte
 
 // createPullRequest handles POST /repos/{owner}/{repo}/pulls
 func (p *GitHubPlugin) createPullRequest(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 	owner := chi.URLParam(r, "owner")
 	repoName := chi.URLParam(r, "repo")
 
@@ -497,7 +517,11 @@ func (p *GitHubPlugin) getPullRequest(w http.ResponseWriter, r *http.Request) {
 
 // mergePullRequest handles PUT /repos/{owner}/{repo}/pulls/{number}/merge
 func (p *GitHubPlugin) mergePullRequest(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 	owner := chi.URLParam(r, "owner")
 	repoName := chi.URLParam(r, "repo")
 	number := chi.URLParam(r, "number")
@@ -607,7 +631,11 @@ func pullRequestToResponse(issue *Issue, pr *PullRequest, user *User, repo *Repo
 
 // createComment handles POST /repos/{owner}/{repo}/issues/{number}/comments
 func (p *GitHubPlugin) createComment(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 	owner := chi.URLParam(r, "owner")
 	repoName := chi.URLParam(r, "repo")
 	number := chi.URLParam(r, "number")
@@ -817,7 +845,11 @@ func commentToResponse(comment *Comment, user *User) map[string]interface{} {
 
 // createReview handles POST /repos/{owner}/{repo}/pulls/{number}/reviews
 func (p *GitHubPlugin) createReview(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(*User)
+	user, ok := getUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "authentication context invalid")
+		return
+	}
 	owner := chi.URLParam(r, "owner")
 	repoName := chi.URLParam(r, "repo")
 	number := chi.URLParam(r, "number")
@@ -1075,7 +1107,17 @@ func reviewToResponse(review *Review, user *User) map[string]interface{} {
 }
 
 // fireWebhooksForEvent finds active webhooks for an event and fires them
+// Includes panic recovery to prevent goroutine crashes from affecting the server
 func (p *GitHubPlugin) fireWebhooksForEvent(repoID int64, eventType string, payload interface{}) {
+	// Add panic recovery to prevent goroutine crashes
+	defer func() {
+		if r := recover(); r != nil {
+			// In production, this should be logged
+			// For now, we silently recover to prevent server crashes
+			_ = r
+		}
+	}()
+
 	webhooks, err := p.store.GetActiveWebhooksForEvent(repoID, eventType)
 	if err != nil {
 		// Log error but don't fail the request
