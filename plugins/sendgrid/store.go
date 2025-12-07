@@ -295,6 +295,10 @@ func (s *SendGridStore) ListMessages(accountID int64, limit, offset int) ([]*Mes
 		messages = append(messages, &msg)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return messages, nil
 }
 
@@ -359,6 +363,10 @@ func (s *SendGridStore) ListSuppressions(accountID int64, suppressionType string
 		suppressions = append(suppressions, &supp)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return suppressions, nil
 }
 
@@ -370,4 +378,20 @@ func (s *SendGridStore) DeleteSuppression(accountID int64, email, suppressionTyp
 	`, accountID, email, suppressionType)
 
 	return err
+}
+
+// GetProductionAPIKey retrieves the production API key for an account
+func (s *SendGridStore) GetProductionAPIKey(accountID int64) (string, error) {
+	var apiKey string
+	err := s.db.QueryRow(`
+		SELECT key FROM sendgrid_api_keys
+		WHERE account_id = ? AND name LIKE 'Production%'
+		LIMIT 1
+	`, accountID).Scan(&apiKey)
+
+	if err != nil {
+		return "", err
+	}
+
+	return apiKey, nil
 }

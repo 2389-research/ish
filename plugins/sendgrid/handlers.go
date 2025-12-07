@@ -5,7 +5,10 @@ package sendgrid
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"net/mail"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -62,6 +65,18 @@ func (p *SendGridPlugin) sendMail(w http.ResponseWriter, r *http.Request) {
 
 	if req.From.Email == "" {
 		writeError(w, http.StatusBadRequest, "from email is required", "from.email")
+		return
+	}
+
+	// Validate from email format
+	if _, err := mail.ParseAddress(req.From.Email); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid from email address", "from.email")
+		return
+	}
+
+	// Validate to email format
+	if _, err := mail.ParseAddress(req.Personalizations[0].To[0].Email); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid to email address", "personalizations.to.email")
 		return
 	}
 
@@ -131,7 +146,9 @@ func (p *SendGridPlugin) getMailSettings(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settings)
+	if err := json.NewEncoder(w).Encode(settings); err != nil {
+		log.Printf("SendGrid: Failed to encode settings response: %v", err)
+	}
 }
 
 // listMessages handles GET /v3/messages
@@ -142,9 +159,20 @@ func (p *SendGridPlugin) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get pagination parameters
+	// Get pagination parameters with DoS protection
 	limit := 50
+	if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
+		if l, err := strconv.Atoi(limitParam); err == nil && l > 0 && l <= 1000 {
+			limit = l
+		}
+	}
+
 	offset := 0
+	if offsetParam := r.URL.Query().Get("offset"); offsetParam != "" {
+		if o, err := strconv.Atoi(offsetParam); err == nil && o >= 0 {
+			offset = o
+		}
+	}
 
 	messages, err := p.store.ListMessages(account.ID, limit, offset)
 	if err != nil {
@@ -166,9 +194,11 @@ func (p *SendGridPlugin) listMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"messages": response,
-	})
+	}); err != nil {
+		log.Printf("SendGrid: Failed to encode messages response: %v", err)
+	}
 }
 
 // getMessage handles GET /v3/messages/{message_id}
@@ -207,7 +237,9 @@ func (p *SendGridPlugin) getMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("SendGrid: Failed to encode message response: %v", err)
+	}
 }
 
 // listBounces handles GET /v3/suppression/bounces
@@ -251,7 +283,9 @@ func (p *SendGridPlugin) listSuppressionsByType(w http.ResponseWriter, r *http.R
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("SendGrid: Failed to encode suppressions response: %v", err)
+	}
 }
 
 // deleteBounce handles DELETE /v3/suppression/bounces/{email}

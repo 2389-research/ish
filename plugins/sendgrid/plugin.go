@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -124,9 +125,11 @@ func writeError(w http.ResponseWriter, status int, message, field string) {
 		},
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"errors": errors,
-	})
+	}); err != nil {
+		log.Printf("SendGrid: Failed to encode error response: %v", err)
+	}
 }
 
 func (p *SendGridPlugin) ValidateToken(token string) bool {

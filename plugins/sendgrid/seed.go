@@ -191,12 +191,7 @@ func (p *SendGridPlugin) Seed(ctx context.Context, size string) (core.SeedData, 
 	// Print API keys for testing
 	fmt.Println("\n=== SendGrid Test API Keys ===")
 	for i, accountID := range accountIDs {
-		var apiKey string
-		err := p.store.db.QueryRow(`
-			SELECT key FROM sendgrid_api_keys
-			WHERE account_id = ? AND name LIKE 'Production%'
-			LIMIT 1
-		`, accountID).Scan(&apiKey)
+		apiKey, err := p.store.GetProductionAPIKey(accountID)
 		if err != nil {
 			return core.SeedData{}, fmt.Errorf("failed to retrieve API key for account %d: %w", accountID, err)
 		}
