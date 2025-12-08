@@ -26,7 +26,11 @@ export GOOGLE_API_BASE_URL=http://localhost:9000
 
 ## Authentication
 
-Authentication is intentionally fake. Use a bearer token in this format:
+ISH supports two authentication modes:
+
+### 1. Simple Bearer Tokens (for quick testing)
+
+Use a bearer token in this format:
 
 ```
 Authorization: Bearer user:USERNAME
@@ -37,6 +41,34 @@ For example:
 curl -H "Authorization: Bearer user:harper" \
   http://localhost:9000/gmail/v1/users/me/messages
 ```
+
+### 2. OAuth 2.0 Flows (for realistic testing)
+
+ISH includes a mock OAuth 2.0 provider that simulates the complete authorization code flow:
+
+```bash
+# 1. Direct user to authorize endpoint
+GET /oauth/{plugin}/authorize?redirect_uri=YOUR_CALLBACK&state=random123
+
+# 2. ISH auto-approves and redirects with code
+# Redirect: YOUR_CALLBACK?code=AUTHZ_CODE&state=random123
+
+# 3. Exchange authorization code for access token
+POST /oauth/{plugin}/token
+  grant_type=authorization_code&code=AUTHZ_CODE&redirect_uri=YOUR_CALLBACK
+
+# Response: {"access_token": "token_...", "refresh_token": "refresh_..."}
+
+# 4. Use access token for API requests
+curl -H "Authorization: Bearer token_..." \
+  http://localhost:9000/gmail/v1/users/me/messages
+
+# 5. Refresh when expired
+POST /oauth/{plugin}/token
+  grant_type=refresh_token&refresh_token=refresh_...
+```
+
+Supported OAuth plugins: `google`, `github`, and any other plugin that implements OAuth.
 
 ## API Endpoints
 
@@ -90,9 +122,12 @@ ISH uses a **plugin architecture** where each API is implemented as a plugin. Th
 ### Built-in Plugins
 
 - **Google Plugin**: Gmail, Calendar, People, and Tasks APIs
-- **OAuth Plugin**: Mock OAuth 2.0 provider for testing authentication flows
+- **OAuth Plugin**: Mock OAuth 2.0 provider for testing authentication flows (authorization code, refresh tokens, revocation)
 - **Discord Plugin**: Discord webhook API v10 for testing webhook integrations
 - **Twilio Plugin**: Twilio SMS and Voice APIs with async webhook callbacks
+- **GitHub Plugin**: GitHub REST API (users, repos, issues, PRs, comments, reviews, webhooks)
+- **Home Assistant Plugin**: Home Assistant REST API for smart home integrations
+- **SendGrid Plugin**: SendGrid email API for transactional email testing
 
 ### Example Usage
 
