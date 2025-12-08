@@ -8,50 +8,66 @@ builds:
   - id: darwin-amd64
     main: ./cmd/ish
     binary: ish
-    goos: [darwin]
-    goarch: [amd64]
+    goos:
+      - darwin
+    goarch:
+      - amd64
     env:
       - CGO_ENABLED=1
       - CC=zig cc -target x86_64-macos
       - CXX=zig c++ -target x86_64-macos
-    flags: [-trimpath]
-    ldflags: [-s -w -X main.version={{.Version}}]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
 
   - id: darwin-arm64
     main: ./cmd/ish
     binary: ish
-    goos: [darwin]
-    goarch: [arm64]
+    goos:
+      - darwin
+    goarch:
+      - arm64
     env:
       - CGO_ENABLED=1
       - CC=zig cc -target aarch64-macos
       - CXX=zig c++ -target aarch64-macos
-    flags: [-trimpath]
-    ldflags: [-s -w -X main.version={{.Version}}]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
 
   - id: linux-amd64
     main: ./cmd/ish
     binary: ish
-    goos: [linux]
-    goarch: [amd64]
+    goos:
+      - linux
+    goarch:
+      - amd64
     env:
       - CGO_ENABLED=1
       - CC=zig cc -target x86_64-linux-musl
       - CXX=zig c++ -target x86_64-linux-musl
-    flags: [-trimpath]
-    ldflags: [-s -w -X main.version={{.Version}} -linkmode=external -extldflags=-static]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -linkmode=external -extldflags=-static
 
   - id: linux-arm64
     main: ./cmd/ish
     binary: ish
-    goos: [linux]
-    goarch: [arm64]
+    goos:
+      - linux
+    goarch:
+      - arm64
     env:
       - CGO_ENABLED=1
       - CC=zig cc -target aarch64-linux-musl
       - CXX=zig c++ -target aarch64-linux-musl
-    flags: [-trimpath]
-    ldflags: [-s -w -X main.version={{.Version}} -linkmode=external -extldflags=-static]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -linkmode=external -extldflags=-static
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
