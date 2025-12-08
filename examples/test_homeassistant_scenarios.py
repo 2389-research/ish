@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "requests",
+#     "websockets",
+# ]
+# ///
+
 # ABOUTME: Scenario-based integration tests for Home Assistant API
 # ABOUTME: Tests real-world workflows like morning routines, device control, and automation
 

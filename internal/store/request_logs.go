@@ -3,7 +3,11 @@
 
 package store
 
-import "time"
+import (
+	"log"
+	"strings"
+	"time"
+)
 
 // RequestLog represents an HTTP request log entry
 type RequestLog struct {
@@ -54,6 +58,14 @@ type RequestLogStats struct {
 
 // GetRequestLogs retrieves request logs with filtering
 func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
+	// Enforce reasonable limits
+	if q.Limit <= 0 {
+		q.Limit = 100 // default
+	}
+	if q.Limit > 10000 {
+		q.Limit = 10000 // maximum
+	}
+
 	query := `SELECT id, timestamp, COALESCE(plugin_name, ''), method, path, status_code, duration_ms,
 	          COALESCE(user_id, ''), COALESCE(ip_address, ''), COALESCE(user_agent, ''), COALESCE(error, ''),
 	          COALESCE(request_body, ''), COALESCE(response_body, '')
@@ -69,8 +81,12 @@ func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
 		args = append(args, q.Method)
 	}
 	if q.PathPrefix != "" {
-		query += " AND path LIKE ?"
-		args = append(args, q.PathPrefix+"%")
+		// Escape SQL wildcard characters (escape backslash first!)
+		escaped := strings.ReplaceAll(q.PathPrefix, "\\", "\\\\")
+		escaped = strings.ReplaceAll(escaped, "%", "\\%")
+		escaped = strings.ReplaceAll(escaped, "_", "\\_")
+		query += " AND path LIKE ? ESCAPE '\\'"
+		args = append(args, escaped+"%")
 	}
 	if q.StatusCode > 0 {
 		query += " AND status_code = ?"
@@ -92,16 +108,32 @@ func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
 
 	var logs []*RequestLog
 	for rows.Next() {
-		log := &RequestLog{}
+		entry := &RequestLog{}
 		var timestamp string
-		if err := rows.Scan(&log.ID, &timestamp, &log.PluginName, &log.Method, &log.Path, &log.StatusCode,
-			&log.DurationMs, &log.UserID, &log.IPAddress, &log.UserAgent, &log.Error,
-			&log.RequestBody, &log.ResponseBody); err != nil {
+		if err := rows.Scan(&entry.ID, &timestamp, &entry.PluginName, &entry.Method, &entry.Path, &entry.StatusCode,
+			&entry.DurationMs, &entry.UserID, &entry.IPAddress, &entry.UserAgent, &entry.Error,
+			&entry.RequestBody, &entry.ResponseBody); err != nil {
 			return nil, err
 		}
-		log.Timestamp, _ = time.Parse("2006-01-02 15:04:05", timestamp)
-		logs = append(logs, log)
+
+		// Parse timestamp
+		parsedTime, err := time.Parse("2006-01-02 15:04:05", timestamp)
+		if err != nil {
+			log.Printf("Error parsing timestamp '%s' for request log ID %d: %v", timestamp, entry.ID, err)
+			// Use zero time as fallback
+			entry.Timestamp = time.Time{}
+		} else {
+			entry.Timestamp = parsedTime
+		}
+
+		logs = append(logs, entry)
 	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return logs, nil
 }
 
@@ -110,23 +142,41 @@ func (s *Store) GetRequestLogStats() (*RequestLogStats, error) {
 	stats := &RequestLogStats{}
 
 	// Total requests
-	s.db.QueryRow("SELECT COUNT(*) FROM request_logs").Scan(&stats.TotalRequests)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM request_logs").Scan(&stats.TotalRequests); err != nil {
+		log.Printf("Error getting total requests: %v", err)
+		return nil, err
+	}
 
 	// Today's requests
 	today := time.Now().Format("2006-01-02")
-	s.db.QueryRow("SELECT COUNT(*) FROM request_logs WHERE date(timestamp) = ?", today).Scan(&stats.TodayRequests)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM request_logs WHERE date(timestamp) = ?", today).Scan(&stats.TodayRequests); err != nil {
+		log.Printf("Error getting today's requests: %v", err)
+		return nil, err
+	}
 
 	// Error requests (4xx, 5xx)
-	s.db.QueryRow("SELECT COUNT(*) FROM request_logs WHERE status_code >= 400").Scan(&stats.ErrorRequests)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM request_logs WHERE status_code >= 400").Scan(&stats.ErrorRequests); err != nil {
+		log.Printf("Error getting error requests: %v", err)
+		return nil, err
+	}
 
 	// Average duration
-	s.db.QueryRow("SELECT COALESCE(AVG(duration_ms), 0) FROM request_logs").Scan(&stats.AvgDurationMs)
+	if err := s.db.QueryRow("SELECT COALESCE(AVG(duration_ms), 0) FROM request_logs").Scan(&stats.AvgDurationMs); err != nil {
+		log.Printf("Error getting average duration: %v", err)
+		return nil, err
+	}
 
 	// Unique endpoints
-	s.db.QueryRow("SELECT COUNT(DISTINCT path) FROM request_logs").Scan(&stats.UniqueEndpoints)
+	if err := s.db.QueryRow("SELECT COUNT(DISTINCT path) FROM request_logs").Scan(&stats.UniqueEndpoints); err != nil {
+		log.Printf("Error getting unique endpoints: %v", err)
+		return nil, err
+	}
 
 	// Unique users
-	s.db.QueryRow("SELECT COUNT(DISTINCT user_id) FROM request_logs WHERE user_id != ''").Scan(&stats.UniqueUsers)
+	if err := s.db.QueryRow("SELECT COUNT(DISTINCT user_id) FROM request_logs WHERE user_id != ''").Scan(&stats.UniqueUsers); err != nil {
+		log.Printf("Error getting unique users: %v", err)
+		return nil, err
+	}
 
 	return stats, nil
 }
@@ -159,6 +209,12 @@ func (s *Store) GetTopEndpoints(limit int) ([]map[string]any, error) {
 			"avg_ms": int(avgMs), // Round to int for display
 		})
 	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return endpoints, nil
 }
 
@@ -224,15 +280,31 @@ func (s *Store) GetRecentRequests(pluginName string, limit int) ([]*RequestLog, 
 
 	var logs []*RequestLog
 	for rows.Next() {
-		log := &RequestLog{}
+		entry := &RequestLog{}
 		var timestamp string
-		if err := rows.Scan(&log.ID, &timestamp, &log.PluginName, &log.Method, &log.Path, &log.StatusCode,
-			&log.DurationMs, &log.UserID, &log.IPAddress, &log.UserAgent, &log.Error,
-			&log.RequestBody, &log.ResponseBody); err != nil {
+		if err := rows.Scan(&entry.ID, &timestamp, &entry.PluginName, &entry.Method, &entry.Path, &entry.StatusCode,
+			&entry.DurationMs, &entry.UserID, &entry.IPAddress, &entry.UserAgent, &entry.Error,
+			&entry.RequestBody, &entry.ResponseBody); err != nil {
 			return nil, err
 		}
-		log.Timestamp, _ = time.Parse("2006-01-02 15:04:05", timestamp)
-		logs = append(logs, log)
+
+		// Parse timestamp
+		parsedTime, err := time.Parse("2006-01-02 15:04:05", timestamp)
+		if err != nil {
+			log.Printf("Error parsing timestamp '%s' for request log ID %d: %v", timestamp, entry.ID, err)
+			// Use zero time as fallback
+			entry.Timestamp = time.Time{}
+		} else {
+			entry.Timestamp = parsedTime
+		}
+
+		logs = append(logs, entry)
 	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return logs, nil
 }

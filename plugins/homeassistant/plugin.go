@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,7 +20,17 @@ import (
 
 type contextKey string
 
-const instanceKey contextKey = "homeassistant_instance"
+const (
+	instanceKey      contextKey = "homeassistant_instance"
+	maxRequestBytes             = 1024 * 1024 // 1MB limit for request bodies
+)
+
+var entityIDPattern = regexp.MustCompile(`^[a-z_]+\.[a-z0-9_]+$`)
+
+// isValidEntityID validates that an entity ID matches the required format: domain.entity_name
+func isValidEntityID(entityID string) bool {
+	return entityIDPattern.MatchString(entityID)
+}
 
 func init() {
 	core.Register(&HomeAssistantPlugin{})
@@ -73,8 +84,19 @@ func (p *HomeAssistantPlugin) Schema() core.PluginSchema {
 }
 
 func (p *HomeAssistantPlugin) ValidateToken(token string) bool {
-	// Accept any Bearer token for now
-	return strings.HasPrefix(token, "token_") || token != ""
+	// Development mode: Accept tokens with 'token_' prefix
+	// In production, this should query the database
+	if token == "" {
+		return false
+	}
+	// Token must have content after the prefix
+	if !strings.HasPrefix(token, "token_") {
+		return false
+	}
+	if len(token) <= len("token_") {
+		return false
+	}
+	return true
 }
 
 func (p *HomeAssistantPlugin) SetDB(db *sql.DB) error {
@@ -92,7 +114,11 @@ func extractToken(authHeader string) (string, bool) {
 	if !strings.HasPrefix(authHeader, prefix) {
 		return "", false
 	}
-	return authHeader[len(prefix):], true
+	token := authHeader[len(prefix):]
+	if token == "" {
+		return "", false
+	}
+	return token, true
 }
 
 // requireAuth middleware validates Home Assistant token
@@ -149,26 +175,22 @@ func (p *HomeAssistantPlugin) handleGetAllStates(w http.ResponseWriter, r *http.
 		return
 	}
 
-	states, err := p.store.ListAllStates(100, 0)
+	// Query states filtered by instance ID at database level
+	states, err := p.store.ListStatesByInstance(instance.ID, 100, 0)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Filter to this instance
-	var instanceStates []State
-	for _, state := range states {
-		if state.InstanceID == instance.ID {
-			instanceStates = append(instanceStates, state)
-		}
-	}
-
 	// Convert to Home Assistant format
 	response := make([]map[string]interface{}, 0)
-	for _, state := range instanceStates {
+	for _, state := range states {
 		var attributes map[string]interface{}
 		if state.Attributes != "" {
-			json.Unmarshal([]byte(state.Attributes), &attributes)
+			if err := json.Unmarshal([]byte(state.Attributes), &attributes); err != nil {
+				log.Printf("Error unmarshaling attributes for entity %s: %v", state.EntityID, err)
+				attributes = nil
+			}
 		}
 
 		response = append(response, map[string]interface{}{
@@ -196,6 +218,12 @@ func (p *HomeAssistantPlugin) handleGetState(w http.ResponseWriter, r *http.Requ
 
 	entityID := chi.URLParam(r, "entity_id")
 
+	// Validate entity ID format
+	if !isValidEntityID(entityID) {
+		http.Error(w, "Invalid entity ID format. Must match pattern: domain.entity_name", http.StatusBadRequest)
+		return
+	}
+
 	// Get latest state for this entity
 	var state State
 	err := p.store.db.QueryRow(`
@@ -217,7 +245,10 @@ func (p *HomeAssistantPlugin) handleGetState(w http.ResponseWriter, r *http.Requ
 
 	var attributes map[string]interface{}
 	if state.Attributes != "" {
-		json.Unmarshal([]byte(state.Attributes), &attributes)
+		if err := json.Unmarshal([]byte(state.Attributes), &attributes); err != nil {
+			log.Printf("Error unmarshaling attributes for entity %s: %v", state.EntityID, err)
+			attributes = nil
+		}
 	}
 
 	response := map[string]interface{}{
@@ -244,9 +275,18 @@ func (p *HomeAssistantPlugin) handleSetState(w http.ResponseWriter, r *http.Requ
 
 	entityID := chi.URLParam(r, "entity_id")
 
+	// Validate entity ID format
+	if !isValidEntityID(entityID) {
+		http.Error(w, "Invalid entity ID format. Must match pattern: domain.entity_name", http.StatusBadRequest)
+		return
+	}
+
+	// Limit request body size to prevent DoS
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+		http.Error(w, "Request body too large or read error", http.StatusBadRequest)
 		return
 	}
 
@@ -313,9 +353,12 @@ func (p *HomeAssistantPlugin) handleCallService(w http.ResponseWriter, r *http.R
 	domain := chi.URLParam(r, "domain")
 	service := chi.URLParam(r, "service")
 
+	// Limit request body size to prevent DoS
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+		http.Error(w, "Request body too large or read error", http.StatusBadRequest)
 		return
 	}
 
@@ -325,6 +368,12 @@ func (p *HomeAssistantPlugin) handleCallService(w http.ResponseWriter, r *http.R
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Validate entity ID format if provided
+	if req.EntityID != "" && !isValidEntityID(req.EntityID) {
+		http.Error(w, "Invalid entity ID format. Must match pattern: domain.entity_name", http.StatusBadRequest)
 		return
 	}
 
@@ -367,9 +416,12 @@ func (p *HomeAssistantPlugin) handleFireEvent(w http.ResponseWriter, r *http.Req
 
 	eventType := chi.URLParam(r, "event_type")
 
+	// Limit request body size to prevent DoS
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+		http.Error(w, "Request body too large or read error", http.StatusBadRequest)
 		return
 	}
 

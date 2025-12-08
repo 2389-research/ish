@@ -323,6 +323,41 @@ func (s *Store) ListAllStates(limit, offset int) ([]State, error) {
 	return states, nil
 }
 
+// ListStatesByInstance returns all states for a specific instance
+func (s *Store) ListStatesByInstance(instanceID int64, limit, offset int) ([]State, error) {
+	rows, err := s.db.Query(`
+		SELECT id, instance_id, entity_id, state, attributes, last_changed, last_updated, created_at
+		FROM homeassistant_states
+		WHERE instance_id = ?
+		ORDER BY last_updated DESC
+		LIMIT ? OFFSET ?
+	`, instanceID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var states []State
+	for rows.Next() {
+		var st State
+		var attributes sql.NullString
+		err := rows.Scan(&st.ID, &st.InstanceID, &st.EntityID, &st.State, &attributes, &st.LastChanged, &st.LastUpdated, &st.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		if attributes.Valid {
+			st.Attributes = attributes.String
+		}
+		states = append(states, st)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return states, nil
+}
+
 // ListAllServiceCalls retrieves all service calls for admin view
 func (s *Store) ListAllServiceCalls(limit, offset int) ([]ServiceCall, error) {
 	rows, err := s.db.Query(`

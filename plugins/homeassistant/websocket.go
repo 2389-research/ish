@@ -4,20 +4,41 @@
 package homeassistant
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = 54 * time.Second
+	maxMessageSize = 512 * 1024 // 512 KB
+)
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for development
+		// Check origin header for security
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // Allow requests with no origin (like direct WebSocket clients)
+		}
+		// Allow localhost and common development origins
+		allowedOrigins := []string{"localhost", "127.0.0.1", "::1"}
+		for _, allowed := range allowedOrigins {
+			if strings.Contains(origin, allowed) {
+				return true
+			}
+		}
+		return false
 	},
 }
 
@@ -46,7 +67,10 @@ type WSClient struct {
 	instance      *Instance
 	authenticated bool
 	mu            sync.RWMutex
-	subscriptions map[int]string // message ID -> subscription type
+	ctx           context.Context
+	cancel        context.CancelFunc
+	closeOnce     sync.Once // ensures send channel is closed only once
+	closeConn     sync.Once // ensures conn.Close() is called only once
 }
 
 // handleWebSocket upgrades HTTP connection to WebSocket and manages the client lifecycle
@@ -57,10 +81,12 @@ func (p *HomeAssistantPlugin) handleWebSocket(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	client := &WSClient{
-		conn:          conn,
-		send:          make(chan []byte, 256),
-		subscriptions: make(map[int]string),
+		conn:   conn,
+		send:   make(chan []byte, 256),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	// Start goroutines for reading and writing
@@ -78,13 +104,23 @@ func (p *HomeAssistantPlugin) handleWebSocket(w http.ResponseWriter, r *http.Req
 // readPump handles incoming WebSocket messages
 func (p *HomeAssistantPlugin) readPump(client *WSClient) {
 	defer func() {
-		client.conn.Close()
+		client.cancel() // Signal writePump to stop
+		client.closeOnce.Do(func() {
+			close(client.send)
+		})
+		client.closeConn.Do(func() {
+			client.conn.Close()
+		})
 	}()
 
-	client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.conn.SetReadLimit(maxMessageSize)
+	if err := client.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.Printf("Failed to set read deadline: %v", err)
+		return
+	}
+
 	client.conn.SetPongHandler(func(string) error {
-		client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
+		return client.conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
 	for {
@@ -98,7 +134,17 @@ func (p *HomeAssistantPlugin) readPump(client *WSClient) {
 
 		var msg WSMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("Failed to unmarshal message: %v", err)
+			log.Printf("Failed to unmarshal WebSocket message: %v", err)
+			// Send error response
+			client.sendMessage(WSMessage{
+				Type:    "result",
+				ID:      msg.ID,
+				Success: false,
+				Error: &WSError{
+					Code:    "invalid_format",
+					Message: "Failed to parse message",
+				},
+			})
 			continue
 		}
 
@@ -108,30 +154,47 @@ func (p *HomeAssistantPlugin) readPump(client *WSClient) {
 
 // writePump handles outgoing WebSocket messages
 func (client *WSClient) writePump() {
-	ticker := time.NewTicker(54 * time.Second)
+	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		client.conn.Close()
+		client.closeConn.Do(func() {
+			client.conn.Close()
+		})
 	}()
 
 	for {
 		select {
 		case message, ok := <-client.send:
-			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := client.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Printf("Failed to set write deadline: %v", err)
+				return
+			}
 			if !ok {
-				client.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// Channel closed, send close message
+				if err := client.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					log.Printf("Failed to write close message: %v", err)
+				}
 				return
 			}
 
 			if err := client.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				log.Printf("Failed to write message: %v", err)
 				return
 			}
 
 		case <-ticker.C:
-			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := client.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Printf("Failed to set ping write deadline: %v", err)
 				return
 			}
+			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("Failed to write ping: %v", err)
+				return
+			}
+
+		case <-client.ctx.Done():
+			// Context cancelled, clean shutdown
+			return
 		}
 	}
 }
@@ -140,15 +203,18 @@ func (client *WSClient) writePump() {
 func (client *WSClient) sendMessage(msg WSMessage) {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("Failed to marshal message: %v", err)
+		log.Printf("Failed to marshal WebSocket message: %v", err)
 		return
 	}
 
 	select {
 	case client.send <- data:
+	case <-client.ctx.Done():
+		// Connection is closing
+		return
 	default:
-		log.Printf("Client send buffer full, closing connection")
-		close(client.send)
+		// Buffer full, drop message (checking context would introduce TOCTOU race)
+		log.Printf("Client send buffer full, dropping message")
 	}
 }
 
@@ -198,8 +264,17 @@ func (p *HomeAssistantPlugin) handleWSMessage(client *WSClient, msg WSMessage) {
 // handleWSAuth handles WebSocket authentication
 func (p *HomeAssistantPlugin) handleWSAuth(client *WSClient, msg WSMessage) {
 	if msg.AccessToken == "" {
-		// Send auth_invalid with error field
-		client.send <- []byte(`{"type":"auth_invalid","message":"Invalid access token"}`)
+		// Send auth_invalid message
+		authInvalid := WSMessage{
+			Type: "auth_invalid",
+			Error: &WSError{
+				Code:    "invalid_auth",
+				Message: "Access token required",
+			},
+		}
+		client.sendMessage(authInvalid)
+		// Close connection after auth failure
+		client.cancel()
 		return
 	}
 
@@ -207,7 +282,16 @@ func (p *HomeAssistantPlugin) handleWSAuth(client *WSClient, msg WSMessage) {
 	instance, err := p.store.GetInstanceByToken(msg.AccessToken)
 	if err != nil {
 		log.Printf("Failed to get instance by token: %v", err)
-		client.send <- []byte(`{"type":"auth_invalid","message":"Invalid access token"}`)
+		authInvalid := WSMessage{
+			Type: "auth_invalid",
+			Error: &WSError{
+				Code:    "invalid_auth",
+				Message: "Invalid access token",
+			},
+		}
+		client.sendMessage(authInvalid)
+		// Close connection after auth failure
+		client.cancel()
 		return
 	}
 
@@ -266,7 +350,10 @@ func (p *HomeAssistantPlugin) handleWSGetStates(client *WSClient, msg WSMessage)
 
 		var attributes map[string]interface{}
 		if state.Attributes != "" {
-			json.Unmarshal([]byte(state.Attributes), &attributes)
+			if err := json.Unmarshal([]byte(state.Attributes), &attributes); err != nil {
+				log.Printf("Failed to unmarshal attributes for entity %s: %v", state.EntityID, err)
+				attributes = make(map[string]interface{})
+			}
 		}
 
 		result = append(result, map[string]interface{}{
