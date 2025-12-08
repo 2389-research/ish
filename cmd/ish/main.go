@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -45,7 +46,7 @@ func main() {
 		RunE:  runServe,
 	}
 	serveCmd.Flags().StringVarP(&port, "port", "p", getEnv("ISH_PORT", "9000"), "Port to listen on")
-	serveCmd.Flags().StringVarP(&dbPath, "db", "d", getEnv("ISH_DB_PATH", "./ish.db"), "Database path")
+	serveCmd.Flags().StringVarP(&dbPath, "db", "d", getDefaultDBPath(), "Database path")
 
 	seedCmd := &cobra.Command{
 		Use:   "seed [plugin]",
@@ -54,14 +55,14 @@ func main() {
 		RunE:  runSeed,
 		Args:  cobra.MaximumNArgs(1),
 	}
-	seedCmd.Flags().StringVarP(&dbPath, "db", "d", getEnv("ISH_DB_PATH", "./ish.db"), "Database path")
+	seedCmd.Flags().StringVarP(&dbPath, "db", "d", getDefaultDBPath(), "Database path")
 
 	resetCmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Reset the database (wipe and reseed)",
 		RunE:  runReset,
 	}
-	resetCmd.Flags().StringVarP(&dbPath, "db", "d", getEnv("ISH_DB_PATH", "./ish.db"), "Database path")
+	resetCmd.Flags().StringVarP(&dbPath, "db", "d", getDefaultDBPath(), "Database path")
 
 	rootCmd.AddCommand(serveCmd, seedCmd, resetCmd)
 
@@ -217,4 +218,42 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+// getDefaultDBPath returns the default database path following XDG Base Directory spec
+// Priority: ISH_DB_PATH env var > ./ish.db (backwards compat) > XDG_DATA_HOME/ish/ish.db
+func getDefaultDBPath() string {
+	// 1. Check environment variable first
+	if envPath := os.Getenv("ISH_DB_PATH"); envPath != "" {
+		return envPath
+	}
+
+	// 2. Check for existing ./ish.db (backwards compatibility)
+	cwdPath := "./ish.db"
+	if _, err := os.Stat(cwdPath); err == nil {
+		return cwdPath
+	}
+
+	// 3. Use XDG Base Directory spec
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		// Default to ~/.local/share per XDG spec
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			// Fallback to current directory if we can't get home dir
+			return cwdPath
+		}
+		dataHome = filepath.Join(homeDir, ".local", "share")
+	}
+
+	ishDataDir := filepath.Join(dataHome, "ish")
+	dbPath := filepath.Join(ishDataDir, "ish.db")
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(ishDataDir, 0755); err != nil {
+		log.Printf("Warning: Could not create XDG data directory %s: %v", ishDataDir, err)
+		return cwdPath
+	}
+
+	return dbPath
 }

@@ -1,7 +1,7 @@
 .scratch/
 
-# Binary
-ish
+# Binary (root directory only)
+/ish
 
 # Database files
 *.db

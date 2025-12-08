@@ -35,17 +35,19 @@
 go build -o ish ./cmd/ish
 
 # 2. Seed with test data (creates realistic emails, contacts, repos, etc.)
-./ish seed --db ish.db
+./ish seed
 
 # 3. Start the server
-./ish serve --db ish.db --port 9000
+./ish serve --port 9000
 
 # 4. Test it out!
 curl -H "Authorization: Bearer user:harper" \
   http://localhost:9000/gmail/v1/users/me/messages
 ```
 
-**Want AI-generated data?** Set `ANTHROPIC_API_KEY` and run `./ish seed --db ish.db --ai`
+**Database Location:** ISH follows XDG Base Directory spec and stores data in `~/.local/share/ish/ish.db` by default. You can override with `--db` flag or `ISH_DB_PATH` environment variable.
+
+**Want AI-generated data?** Set `ANTHROPIC_API_KEY` and run `./ish seed --ai`
 
 **View everything in your browser:** Visit `http://localhost:9000/admin`
 
