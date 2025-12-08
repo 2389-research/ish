@@ -48,9 +48,11 @@ func main() {
 	serveCmd.Flags().StringVarP(&dbPath, "db", "d", getEnv("ISH_DB_PATH", "./ish.db"), "Database path")
 
 	seedCmd := &cobra.Command{
-		Use:   "seed",
-		Short: "Seed the database with test data",
+		Use:   "seed [plugin]",
+		Short: "Seed the database with test data (optionally for a specific plugin)",
+		Long:  "Seed the database with test data. If no plugin is specified, seeds all plugins. Use 'seed <plugin-name>' to seed only a specific plugin.",
 		RunE:  runSeed,
+		Args:  cobra.MaximumNArgs(1),
 	}
 	seedCmd.Flags().StringVarP(&dbPath, "db", "d", getEnv("ISH_DB_PATH", "./ish.db"), "Database path")
 
@@ -130,7 +132,12 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	}
 	defer s.Close()
 
-	return seedData(s)
+	var pluginName string
+	if len(args) > 0 {
+		pluginName = args[0]
+	}
+
+	return seedData(s, pluginName)
 }
 
 func runReset(cmd *cobra.Command, args []string) error {
@@ -143,11 +150,15 @@ func runReset(cmd *cobra.Command, args []string) error {
 	}
 	defer s.Close()
 
-	return seedData(s)
+	return seedData(s, "") // Reset always seeds all plugins
 }
 
-func seedData(s *store.Store) error {
-	log.Println("Seeding database with test data...")
+func seedData(s *store.Store, pluginFilter string) error {
+	if pluginFilter != "" {
+		log.Printf("Seeding database with test data for plugin: %s", pluginFilter)
+	} else {
+		log.Println("Seeding database with test data...")
+	}
 
 	// Initialize all plugins with database access
 	for _, plugin := range core.All() {
@@ -159,9 +170,15 @@ func seedData(s *store.Store) error {
 		}
 	}
 
-	// Seed each plugin
+	// Seed each plugin (optionally filtered by name)
 	totalRecords := 0
+	seededCount := 0
 	for _, plugin := range core.All() {
+		// Skip if filter is set and doesn't match
+		if pluginFilter != "" && plugin.Name() != pluginFilter {
+			continue
+		}
+
 		seedData, err := plugin.Seed(context.Background(), "medium")
 		if err != nil {
 			log.Printf("❌ Failed to seed %s: %v", plugin.Name(), err)
@@ -173,10 +190,25 @@ func seedData(s *store.Store) error {
 			for _, count := range seedData.Records {
 				totalRecords += count
 			}
+			seededCount++
 		}
 	}
 
-	log.Printf("\n🎉 Seeding complete! Created %d total records across all plugins", totalRecords)
+	// Check if plugin filter didn't match anything
+	if pluginFilter != "" && seededCount == 0 {
+		log.Printf("❌ Plugin '%s' not found or has no seed implementation", pluginFilter)
+		log.Println("\nAvailable plugins:")
+		for _, plugin := range core.All() {
+			log.Printf("  - %s", plugin.Name())
+		}
+		return fmt.Errorf("plugin '%s' not found", pluginFilter)
+	}
+
+	if pluginFilter != "" {
+		log.Printf("\n🎉 Seeding complete! Created %d records for %s", totalRecords, pluginFilter)
+	} else {
+		log.Printf("\n🎉 Seeding complete! Created %d total records across all plugins", totalRecords)
+	}
 	return nil
 }
 
