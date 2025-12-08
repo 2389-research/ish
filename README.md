@@ -61,6 +61,181 @@ const baseUrl = process.env.API_BASE_URL || 'http://localhost:9000';
 // export API_BASE_URL=https://www.googleapis.com
 ```
 
+## SDK Integration Examples
+
+ISH works seamlessly with official API client libraries. Just point them at your local ISH server instead of production endpoints.
+
+### Google APIs (Node.js)
+
+```javascript
+const { google } = require('googleapis');
+
+// Configure Gmail client to use ISH
+const gmail = google.gmail({
+  version: 'v1',
+  auth: 'user:harper',  // Simple auth for testing
+  // Point to ISH instead of production
+  rootUrl: process.env.GOOGLE_API_BASE_URL || 'http://localhost:9000'
+});
+
+// Now use the SDK normally
+const messages = await gmail.users.messages.list({
+  userId: 'me',
+  maxResults: 10,
+  q: 'is:unread'
+});
+
+// Calendar works the same way
+const calendar = google.calendar({
+  version: 'v3',
+  auth: 'user:harper',
+  rootUrl: process.env.GOOGLE_API_BASE_URL || 'http://localhost:9000'
+});
+
+const events = await calendar.events.list({
+  calendarId: 'primary',
+  timeMin: new Date().toISOString(),
+  maxResults: 10
+});
+```
+
+### Google APIs (Python)
+
+```python
+from googleapiclient.discovery import build
+import os
+
+# Point to ISH for local development
+base_url = os.getenv('GOOGLE_API_BASE_URL', 'http://localhost:9000')
+
+# Build Gmail client
+gmail = build(
+    'gmail', 'v1',
+    developerKey='user:harper',  # Simple auth
+    static_discovery=False,
+    # Override the discovery URL to use ISH
+    discoveryServiceUrl=f'{base_url}/discovery/v1/apis/{{api}}/{{apiVersion}}/rest'
+)
+
+# Use the SDK normally
+messages = gmail.users().messages().list(userId='me', maxResults=10).execute()
+
+# Calendar example
+calendar = build('calendar', 'v3', developerKey='user:harper', static_discovery=False)
+events = calendar.events().list(calendarId='primary', maxResults=10).execute()
+```
+
+### GitHub (Octokit - Node.js)
+
+```javascript
+const { Octokit } = require('@octokit/rest');
+
+const octokit = new Octokit({
+  auth: 'ghp_testtoken123',
+  // Point to ISH instead of api.github.com
+  baseUrl: process.env.GITHUB_API_BASE_URL || 'http://localhost:9000'
+});
+
+// Use GitHub SDK normally
+const { data: repos } = await octokit.repos.listForAuthenticatedUser();
+const { data: issues } = await octokit.issues.listForRepo({
+  owner: 'facebook',
+  repo: 'react'
+});
+
+// Create issues, PRs, comments, etc.
+await octokit.issues.create({
+  owner: 'facebook',
+  repo: 'react',
+  title: 'Test issue from ISH',
+  body: 'This is a test'
+});
+```
+
+### Twilio (Node.js)
+
+```javascript
+const twilio = require('twilio');
+
+const client = twilio(
+  'test_account_sid',
+  'test_auth_token',
+  {
+    // Point to ISH instead of api.twilio.com
+    accountSid: 'test_account_sid',
+    edge: undefined,
+    region: undefined,
+    // Override the hostname
+    lazyLoading: false,
+    httpClient: {
+      request: (opts) => {
+        opts.uri = opts.uri.replace('https://api.twilio.com', 'http://localhost:9000');
+        return require('https').request(opts);
+      }
+    }
+  }
+);
+
+// Send SMS via ISH
+const message = await client.messages.create({
+  body: 'Hello from ISH!',
+  from: '+15551234567',
+  to: '+15559876543'
+});
+```
+
+### SendGrid (Node.js)
+
+```javascript
+const sgMail = require('@sendgrid/mail');
+
+// ISH doesn't need a real API key
+sgMail.setApiKey('SG.test_key_from_ish');
+
+// Override the API host to point to ISH
+sgMail.setClient(require('@sendgrid/client'));
+sgMail.client.setDefaultRequest('baseUrl', 'http://localhost:9000');
+
+// Send email via ISH
+await sgMail.send({
+  to: 'test@example.com',
+  from: 'sender@example.com',
+  subject: 'Testing ISH',
+  text: 'This email goes to ISH, not SendGrid'
+});
+```
+
+### Discord Webhooks (Node.js)
+
+```javascript
+const { WebhookClient } = require('discord.js');
+
+// Point Discord webhook client to ISH
+const webhook = new WebhookClient({
+  url: 'http://localhost:9000/api/webhooks/YOUR_ID/YOUR_TOKEN'
+});
+
+// Send messages via ISH
+await webhook.send({
+  content: 'Hello from ISH!',
+  username: 'ISH Bot',
+  embeds: [{
+    title: 'Test Embed',
+    description: 'This webhook goes to ISH, not Discord',
+    color: 0x5865F2
+  }]
+});
+```
+
+### Key Takeaway
+
+**Most SDKs let you override the base URL or endpoint.** Check your SDK's documentation for:
+- `baseUrl`, `rootUrl`, `endpoint` configuration options
+- Environment variables like `GOOGLE_API_BASE_URL`
+- Custom HTTP client/transport configuration
+
+Switch between ISH (dev) and production by changing one environment variable!
+
 ## Authentication
 
 ISH supports two authentication modes:
