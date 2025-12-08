@@ -194,7 +194,7 @@ func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 		headRef := branches[i%len(branches)]
 		baseRef := "main"
 
-		issue, pr, err := p.store.CreatePullRequest(repo.ID, user.ID, title, body, headRef, baseRef)
+		issue, _, err := p.store.CreatePullRequest(repo.ID, user.ID, title, body, headRef, baseRef)
 		if err != nil {
 			return core.SeedData{}, err
 		}
@@ -216,7 +216,6 @@ func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 		}
 
 		createdPRs = append(createdPRs, issue)
-		_ = pr // Store the PR for potential future use
 	}
 
 	// Create comments on issues and PRs

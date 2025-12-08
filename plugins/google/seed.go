@@ -34,11 +34,11 @@ func (p *GooglePlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 	generator := seed.NewGenerator(userID)
 	genData, err := generator.Generate(ctx, numMessages, numEvents, numPeople)
 	if err == nil && len(genData.Emails) > 0 {
-		// AI generation succeeded, use it
+		// Generation succeeded (either AI or generator's static fallback), use it
 		return p.seedFromAI(ctx, userID, genData, numTasks)
 	}
 
-	// Fall back to static data if AI generation fails or OPENAI_API_KEY not set
+	// Fall back to plugin's own static data if generation produced no results
 	log.Println("Using static seed data for Google plugin")
 	return p.seedStatic(ctx, userID, numMessages, numEvents, numPeople, numTasks)
 }
@@ -98,6 +98,7 @@ func (p *GooglePlugin) seedFromAI(ctx context.Context, userID string, genData *s
 			Title:  list.title,
 		}
 		if err := p.store.CreateTaskList(taskListObj); err != nil {
+			log.Printf("Failed to create task list '%s': %v", list.title, err)
 			continue
 		}
 
@@ -107,6 +108,7 @@ func (p *GooglePlugin) seedFromAI(ctx context.Context, userID string, genData *s
 			}
 			_, err := p.store.CreateTaskFromForm(title, "", "", "needsAction")
 			if err != nil {
+				log.Printf("Failed to create task '%s': %v", title, err)
 				continue
 			}
 			totalTasks++
@@ -232,7 +234,8 @@ func (p *GooglePlugin) seedStatic(ctx context.Context, userID string, numMessage
 		msg := messages[i]
 		_, err := p.store.CreateGmailMessageFromForm(userID, msg.from, msg.subject, msg.body, msg.labels)
 		if err != nil {
-			return core.SeedData{}, fmt.Errorf("failed to create message: %w", err)
+			log.Printf("Failed to create static message: %v", err)
+			continue
 		}
 		totalMessages++
 	}
@@ -347,7 +350,8 @@ func (p *GooglePlugin) seedStatic(ctx context.Context, userID string, numMessage
 		}
 		_, err := p.store.CreateCalendarEvent(event)
 		if err != nil {
-			return core.SeedData{}, fmt.Errorf("failed to create event: %w", err)
+			log.Printf("Failed to create static event: %v", err)
+			continue
 		}
 		totalEvents++
 	}
@@ -420,7 +424,8 @@ func (p *GooglePlugin) seedStatic(ctx context.Context, userID string, numMessage
 		}
 		err := p.store.CreatePerson(person)
 		if err != nil {
-			return core.SeedData{}, fmt.Errorf("failed to create person: %w", err)
+			log.Printf("Failed to create static contact: %v", err)
+			continue
 		}
 		totalPeople++
 	}
@@ -521,7 +526,8 @@ func (p *GooglePlugin) seedStatic(ctx context.Context, userID string, numMessage
 		}
 		_, err := p.store.CreateTask(task)
 		if err != nil {
-			return core.SeedData{}, fmt.Errorf("failed to create task: %w", err)
+			log.Printf("Failed to create static task: %v", err)
+			continue
 		}
 		totalTasks++
 	}
