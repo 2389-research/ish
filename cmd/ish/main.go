@@ -76,11 +76,28 @@ func main() {
 	}
 }
 
+// validateAndCleanDBPath validates and cleans a database path
+func validateAndCleanDBPath(path string) (string, error) {
+	cleanPath := strings.TrimSpace(path)
+	cleanPath = filepath.Clean(cleanPath)
+
+	if cleanPath == "" || cleanPath == "." || cleanPath == "/" {
+		return "", fmt.Errorf("database path cannot be empty, '.', or '/'")
+	}
+
+	// Check for path traversal attempts
+	if strings.Contains(cleanPath, "..") {
+		return "", fmt.Errorf("database path cannot contain '..'")
+	}
+
+	return cleanPath, nil
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
-	// Validate dbPath from flag
-	cleanPath := strings.TrimSpace(dbPath)
-	if cleanPath == "" || cleanPath == "." {
-		return fmt.Errorf("database path cannot be empty or '.'")
+	var err error
+	dbPath, err = validateAndCleanDBPath(dbPath)
+	if err != nil {
+		return err
 	}
 
 	srv, err := newServer(dbPath)
@@ -138,10 +155,10 @@ func newServer(dbPath string) (http.Handler, error) {
 }
 
 func runSeed(cmd *cobra.Command, args []string) error {
-	// Validate dbPath from flag
-	cleanPath := strings.TrimSpace(dbPath)
-	if cleanPath == "" || cleanPath == "." {
-		return fmt.Errorf("database path cannot be empty or '.'")
+	var err error
+	dbPath, err = validateAndCleanDBPath(dbPath)
+	if err != nil {
+		return err
 	}
 
 	s, err := store.New(dbPath)
@@ -159,14 +176,16 @@ func runSeed(cmd *cobra.Command, args []string) error {
 }
 
 func runReset(cmd *cobra.Command, args []string) error {
-	// Validate dbPath from flag
-	cleanPath := strings.TrimSpace(dbPath)
-	if cleanPath == "" || cleanPath == "." {
-		return fmt.Errorf("database path cannot be empty or '.'")
+	var err error
+	dbPath, err = validateAndCleanDBPath(dbPath)
+	if err != nil {
+		return err
 	}
 
-	// Remove existing database
-	os.Remove(dbPath)
+	// Remove existing database - ignore if file doesn't exist
+	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove existing database: %w", err)
+	}
 
 	s, err := store.New(dbPath)
 	if err != nil {
@@ -205,12 +224,12 @@ func seedData(s *store.Store, pluginFilter string) error {
 
 		seedData, err := plugin.Seed(context.Background(), "medium")
 		if err != nil {
-			log.Printf("❌ Failed to seed %s: %v", plugin.Name(), err)
+			log.Printf("Failed to seed %s: %v", plugin.Name(), err)
 			continue
 		}
 
 		if seedData.Summary != "" && seedData.Summary != "Not yet implemented" {
-			log.Printf("✅ %s: %s", plugin.Name(), seedData.Summary)
+			log.Printf("%s: %s", plugin.Name(), seedData.Summary)
 			for _, count := range seedData.Records {
 				totalRecords += count
 			}
@@ -220,7 +239,7 @@ func seedData(s *store.Store, pluginFilter string) error {
 
 	// Check if plugin filter didn't match anything
 	if pluginFilter != "" && seededCount == 0 {
-		log.Printf("❌ Plugin '%s' not found or has no seed implementation", pluginFilter)
+		log.Printf("Plugin '%s' not found or has no seed implementation", pluginFilter)
 		log.Println("\nAvailable plugins:")
 		for _, plugin := range core.All() {
 			log.Printf("  - %s", plugin.Name())
@@ -229,9 +248,9 @@ func seedData(s *store.Store, pluginFilter string) error {
 	}
 
 	if pluginFilter != "" {
-		log.Printf("\n🎉 Seeding complete! Created %d records for %s", totalRecords, pluginFilter)
+		log.Printf("\nSeeding complete! Created %d records for %s", totalRecords, pluginFilter)
 	} else {
-		log.Printf("\n🎉 Seeding complete! Created %d total records across all plugins", totalRecords)
+		log.Printf("\nSeeding complete! Created %d total records across all plugins", totalRecords)
 	}
 	return nil
 }
@@ -303,8 +322,12 @@ func getDefaultDBPath() string {
 		log.Printf("Warning: Cannot write to data directory %s: %v, using ./ish.db", ishDataDir, err)
 		return cwdPath
 	} else {
-		f.Close()
-		os.Remove(testFile)
+		if err := f.Close(); err != nil {
+			log.Printf("Warning: Error closing test file: %v", err)
+		}
+		if err := os.Remove(testFile); err != nil {
+			log.Printf("Warning: Could not remove test file %s: %v", testFile, err)
+		}
 	}
 
 	// Only log in debug mode to avoid polluting --help output
