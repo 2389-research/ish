@@ -25,9 +25,9 @@ type RequestLog struct {
 // LogRequest inserts a request log entry
 func (s *Store) LogRequest(log *RequestLog) error {
 	_, err := s.db.Exec(`
-		INSERT INTO request_logs (plugin_name, method, path, status_code, duration_ms, user_id, ip_address, user_agent, error, request_body, response_body)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, log.PluginName, log.Method, log.Path, log.StatusCode, log.DurationMs, log.UserID, log.IPAddress, log.UserAgent, log.Error, log.RequestBody, log.ResponseBody)
+		INSERT INTO request_logs (timestamp, plugin_name, method, path, status_code, duration_ms, user_id, ip_address, user_agent, error, request_body, response_body)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, log.Timestamp, log.PluginName, log.Method, log.Path, log.StatusCode, log.DurationMs, log.UserID, log.IPAddress, log.UserAgent, log.Error, log.RequestBody, log.ResponseBody)
 	return err
 }
 

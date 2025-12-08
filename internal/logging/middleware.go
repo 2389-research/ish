@@ -105,6 +105,7 @@ func Middleware(s *store.Store) func(http.Handler) http.Handler {
 
 			// Log to database (fire and forget)
 			go s.LogRequest(&store.RequestLog{
+				Timestamp:    time.Now(),
 				PluginName:   pluginName,
 				Method:       r.Method,
 				Path:         r.URL.Path,
