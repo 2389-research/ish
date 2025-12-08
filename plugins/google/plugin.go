@@ -45,13 +45,7 @@ func (p *GooglePlugin) Schema() core.PluginSchema {
 	return getGoogleSchema()
 }
 
-func (p *GooglePlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {
-	// Seeding will be implemented later
-	return core.SeedData{
-		Summary: "Not yet implemented",
-		Records: map[string]int{},
-	}, nil
-}
+// Seed implementation is in seed.go
 
 func (p *GooglePlugin) ValidateToken(token string) bool {
 	// Token validation will be implemented later

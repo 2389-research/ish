@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -146,10 +147,36 @@ func runReset(cmd *cobra.Command, args []string) error {
 }
 
 func seedData(s *store.Store) error {
-	// TODO: Update to work with plugin architecture
-	// Each plugin should handle its own seeding via the Plugin.Seed() method
-	log.Println("Seed functionality not yet implemented with plugin architecture")
-	log.Println("Use plugin-specific seeding methods instead")
+	log.Println("Seeding database with test data...")
+
+	// Initialize all plugins with database access
+	for _, plugin := range core.All() {
+		if dbPlugin, ok := plugin.(core.DatabasePlugin); ok {
+			if err := dbPlugin.SetDB(s.GetDB()); err != nil {
+				log.Printf("Failed to initialize plugin %s: %v", plugin.Name(), err)
+				continue
+			}
+		}
+	}
+
+	// Seed each plugin
+	totalRecords := 0
+	for _, plugin := range core.All() {
+		seedData, err := plugin.Seed(context.Background(), "medium")
+		if err != nil {
+			log.Printf("❌ Failed to seed %s: %v", plugin.Name(), err)
+			continue
+		}
+
+		if seedData.Summary != "" && seedData.Summary != "Not yet implemented" {
+			log.Printf("✅ %s: %s", plugin.Name(), seedData.Summary)
+			for _, count := range seedData.Records {
+				totalRecords += count
+			}
+		}
+	}
+
+	log.Printf("\n🎉 Seeding complete! Created %d total records across all plugins", totalRecords)
 	return nil
 }
 
