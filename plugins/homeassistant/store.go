@@ -173,6 +173,22 @@ func (s *Store) GetOrCreateInstance(url, token, name string) (*Instance, error) 
 	return &instance, nil
 }
 
+// GetInstanceByToken gets an instance by its access token
+func (s *Store) GetInstanceByToken(token string) (*Instance, error) {
+	var instance Instance
+	err := s.db.QueryRow(`
+		SELECT id, url, token, name, created_at, updated_at
+		FROM homeassistant_instances
+		WHERE token = ?
+	`, token).Scan(&instance.ID, &instance.URL, &instance.Token, &instance.Name, &instance.CreatedAt, &instance.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &instance, nil
+}
+
 // CreateOrUpdateEntity creates or updates an entity
 func (s *Store) CreateOrUpdateEntity(instanceID int64, entityID, friendlyName, domain, platform string) error {
 	now := time.Now()

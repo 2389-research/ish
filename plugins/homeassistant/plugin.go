@@ -57,6 +57,9 @@ func (p *HomeAssistantPlugin) RegisterRoutes(r chi.Router) {
 	r.Post("/api/states/{entity_id}", p.requireAuth(p.handleSetState))
 	r.Post("/api/services/{domain}/{service}", p.requireAuth(p.handleCallService))
 	r.Post("/api/events/{event_type}", p.requireAuth(p.handleFireEvent))
+
+	// WebSocket API endpoint
+	r.Get("/api/websocket", p.handleWebSocket)
 }
 
 func (p *HomeAssistantPlugin) RegisterAuth(r chi.Router) {
@@ -107,17 +110,10 @@ func (p *HomeAssistantPlugin) requireAuth(next http.HandlerFunc) http.HandlerFun
 			return
 		}
 
-		// Get or create instance for this token
-		instanceName := "default"
-		instanceURL := "http://localhost:8123"
-
-		if strings.HasPrefix(token, "instance:") {
-			instanceName = strings.TrimPrefix(token, "instance:")
-		}
-
-		instance, err := p.store.GetOrCreateInstance(instanceURL, token, instanceName)
+		// Get instance by token
+		instance, err := p.store.GetInstanceByToken(token)
 		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 

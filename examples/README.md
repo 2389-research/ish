@@ -227,6 +227,38 @@ python examples/homeassistant.py
 
 ---
 
+#### Home Assistant WebSocket (`test_websocket.py`)
+Real-time Home Assistant WebSocket API integration:
+- WebSocket connection with authentication
+- Subscribe to entity state changes
+- Real-time event streaming
+- Ping/pong heartbeat
+
+**Usage:**
+```bash
+# Install websockets library
+cd examples
+uv pip install websockets
+
+# Run WebSocket test
+uv run test_websocket.py
+```
+
+**Key features:**
+- WebSocket authentication flow
+- Real-time state queries
+- Bidirectional communication
+- Connection health monitoring
+
+**Protocol flow:**
+1. Connect to `ws://localhost:9000/api/websocket`
+2. Receive `auth_required` message
+3. Send `auth` with access token
+4. Receive `auth_ok` confirmation
+5. Send commands (`get_states`, `ping`, etc.)
+
+---
+
 ## Configuration
 
 Each example can be configured with custom base URL and authentication:
