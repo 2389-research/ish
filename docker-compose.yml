@@ -12,9 +12,9 @@ services:
       # Persist database between container restarts
       - ish-data:/app/data
     environment:
-      # Optional: Set Anthropic API key for AI-powered seed generation
+      # Optional: Set OpenAI API key for AI-powered seed generation
       # Uncomment and add your key to enable AI seeding
-      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
 
       # Optional: Customize port (must match ports mapping above)
       # - ISH_PORT=9000
@@ -42,7 +42,7 @@ services:
 
     # Option 2: Reset and seed database every time (for testing)
     # command: >
-    #   sh -c "./ish reset --db /app/data/ish.db --force &&
+    #   sh -c "./ish reset --db /app/data/ish.db &&
     #          ./ish seed --db /app/data/ish.db &&
     #          ./ish serve --db /app/data/ish.db --port 9000"
 
@@ -65,11 +65,11 @@ volumes:
 # Seed database with static data:
 #   docker-compose exec ish ./ish seed --db /app/data/ish.db
 #
-# Seed with AI-generated data (requires ANTHROPIC_API_KEY):
-#   docker-compose exec ish ./ish seed --db /app/data/ish.db --ai
+# Seed with generated data (AI used if OPENAI_API_KEY set):
+#   docker-compose exec ish ./ish seed --db /app/data/ish.db
 #
 # Reset database:
-#   docker-compose exec ish ./ish reset --db /app/data/ish.db --force
+#   docker-compose exec ish ./ish reset --db /app/data/ish.db
 #
 # Stop ISH:
 #   docker-compose down

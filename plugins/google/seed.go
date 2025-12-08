@@ -6,12 +6,14 @@ package google
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
+	"github.com/2389/ish/internal/seed"
 	"github.com/2389/ish/plugins/core"
 )
 
-// Seed creates test data for the Google plugin
+// Seed creates test data for the Google plugin using AI by default
 func (p *GooglePlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {
 	var numMessages, numEvents, numPeople, numTasks int
 
@@ -27,6 +29,104 @@ func (p *GooglePlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 	}
 
 	userID := "me"
+
+	// Try AI generation first (default behavior)
+	generator := seed.NewGenerator(userID)
+	genData, err := generator.Generate(ctx, numMessages, numEvents, numPeople)
+	if err == nil && len(genData.Emails) > 0 {
+		// AI generation succeeded, use it
+		return p.seedFromAI(ctx, userID, genData, numTasks)
+	}
+
+	// Fall back to static data if AI generation fails or OPENAI_API_KEY not set
+	log.Println("Using static seed data for Google plugin")
+	return p.seedStatic(ctx, userID, numMessages, numEvents, numPeople, numTasks)
+}
+
+// seedFromAI creates seed data using AI-generated content
+func (p *GooglePlugin) seedFromAI(ctx context.Context, userID string, genData *seed.GeneratedData, numTasks int) (core.SeedData, error) {
+	totalMessages := 0
+	totalEvents := 0
+	totalPeople := 0
+	totalTasks := 0
+
+	// Create messages from AI data
+	for _, email := range genData.Emails {
+		_, err := p.store.CreateGmailMessageFromForm(userID, email.From, email.Subject, email.Body, email.Labels)
+		if err != nil {
+			log.Printf("Failed to create AI message: %v", err)
+			continue
+		}
+		totalMessages++
+	}
+
+	// Create events from AI data
+	for _, event := range genData.Events {
+		_, err := p.store.CreateCalendarEventFromForm(event.Summary, event.Description, event.StartTime, event.EndTime)
+		if err != nil {
+			log.Printf("Failed to create AI event: %v", err)
+			continue
+		}
+		totalEvents++
+	}
+
+	// Create contacts from AI data
+	for _, contact := range genData.Contacts {
+		_, err := p.store.CreatePersonFromForm(userID, contact.Name, contact.Email)
+		if err != nil {
+			log.Printf("Failed to create AI contact: %v", err)
+			continue
+		}
+		totalPeople++
+	}
+
+	// Create tasks (still using static data for now)
+	taskLists := []struct {
+		title string
+		tasks []string
+	}{
+		{"Work", []string{"Review pull requests", "Update documentation", "Fix critical bug"}},
+		{"Personal", []string{"Buy groceries", "Call dentist"}},
+	}
+
+	for _, list := range taskLists {
+		if totalTasks >= numTasks {
+			break
+		}
+		taskListObj := &TaskList{
+			UserID: userID,
+			Title:  list.title,
+		}
+		if err := p.store.CreateTaskList(taskListObj); err != nil {
+			continue
+		}
+
+		for _, title := range list.tasks {
+			if totalTasks >= numTasks {
+				break
+			}
+			_, err := p.store.CreateTaskFromForm(title, "", "", "needsAction")
+			if err != nil {
+				continue
+			}
+			totalTasks++
+		}
+	}
+
+	return core.SeedData{
+		Summary: fmt.Sprintf("Created %d AI-generated messages, %d events, %d contacts, %d tasks",
+			totalMessages, totalEvents, totalPeople, totalTasks),
+		Records: map[string]int{
+			"messages": totalMessages,
+			"events":   totalEvents,
+			"contacts": totalPeople,
+			"tasks":    totalTasks,
+		},
+	}, nil
+}
+
+// seedStatic creates seed data using static hardcoded content
+func (p *GooglePlugin) seedStatic(ctx context.Context, userID string, numMessages, numEvents, numPeople, numTasks int) (core.SeedData, error) {
 
 	// === Gmail Messages ===
 	messages := []struct {

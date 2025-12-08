@@ -52,7 +52,7 @@ func (p *DiscordPlugin) RegisterAuth(r chi.Router) {
 
 func (p *DiscordPlugin) Seed(ctx context.Context, size string) (core.SeedData, error) {
 	return core.SeedData{
-		Summary: "Discord plugin seeding not implemented",
+		Summary: "Discord webhooks are created via API calls - no seed data needed",
 		Records: map[string]int{},
 	}, nil
 }

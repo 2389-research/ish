@@ -213,7 +213,7 @@ func (p *SendGridPlugin) GetResource(ctx context.Context, slug string, id string
 	case "suppressions":
 		// Suppressions don't have individual GET by ID in current store
 		// Would need to add GetSuppression method if needed
-		return nil, fmt.Errorf("get suppression by ID not implemented")
+		return nil, fmt.Errorf("individual suppression lookup not supported - use ListResources to view all")
 	default:
 		return nil, fmt.Errorf("unknown resource: %s", slug)
 	}

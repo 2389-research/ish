@@ -7,9 +7,10 @@
 - 🔌 **Mock 7+ Popular APIs**: Google (Gmail, Calendar, Contacts, Tasks), GitHub, Twilio, Discord, SendGrid, Home Assistant, OAuth 2.0
 - 🔐 **Realistic Authentication**: OAuth 2.0 authorization flows, token refresh/revocation, or simple bearer tokens
 - 💾 **Persistent SQLite Storage**: All data stored locally in an inspectable database
-- 🎨 **Auto-Generated Admin UI**: Web interface to view/manage all resources across plugins
-- 📝 **Realistic Test Data**: Pre-seeded with realistic emails, contacts, events, repositories, and more
+- 🎨 **Auto-Generated Admin UI**: Web interface to view resources across all plugins and browse request logs
+- 🤖 **AI-Powered Test Data**: Uses OpenAI to generate realistic emails, contacts, and events (falls back to static data if no API key)
 - 📊 **Request Logging**: Track all API calls with timestamps and plugin attribution
+- 📧 **Auto-Reply Simulation**: Automatically generates realistic replies to sent emails (enable with ISH_AUTO_REPLY=true)
 - 🔍 **Full Query Support**: Gmail search syntax, Calendar time filtering, pagination, incremental sync
 - 🚀 **Plugin Architecture**: Add your own mock APIs by implementing a simple interface
 - 📡 **Webhook Simulation**: Async webhook delivery for Twilio, SSRF-protected GitHub webhooks
@@ -407,8 +408,11 @@ The admin UI is **schema-driven**: plugins define their data structure, and ISH 
 
 ## Seeding Data
 
+ISH uses **AI-generated data by default** when `OPENAI_API_KEY` is set. Falls back to static test data if no API key is provided.
+
 ```bash
-# Seed the database with test data
+# Seed with AI-generated data (default if OPENAI_API_KEY is set)
+export OPENAI_API_KEY=sk-...
 ./ish seed
 
 # Or reset and reseed (clears existing data first)
@@ -416,6 +420,18 @@ The admin UI is **schema-driven**: plugins define their data structure, and ISH 
 ```
 
 **Note:** If you need to reseed, use `./ish reset` to clear existing data first, as the seed command is not idempotent and will fail on duplicate entries.
+
+## Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `OPENAI_API_KEY` | Enable AI-generated seed data | (none - uses static data) |
+| `OPENAI_MODEL` | OpenAI model for generation | `gpt-4o-mini` |
+| `ISH_AUTO_REPLY` | Enable automatic email replies | `false` |
+| `ISH_REPLY_DELAY_MIN` | Min seconds before auto-reply | `2` |
+| `ISH_REPLY_DELAY_MAX` | Max seconds before auto-reply | `30` |
+| `ISH_PORT` | Server port | `9000` |
+| `ISH_DB_PATH` | Database location | (see Database Location section) |
 
 ## Documentation
 

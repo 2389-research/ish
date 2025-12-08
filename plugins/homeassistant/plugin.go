@@ -481,7 +481,7 @@ func (p *HomeAssistantPlugin) ListResources(ctx context.Context, slug string, op
 // GetResource implements core.DataProvider
 func (p *HomeAssistantPlugin) GetResource(ctx context.Context, slug string, id string) (map[string]interface{}, error) {
 	// For now, return error - can implement later if needed
-	return nil, fmt.Errorf("GetResource not implemented for homeassistant")
+	return nil, fmt.Errorf("individual entity lookup not supported - use ListResources to view all entities")
 }
 
 // Conversion helpers

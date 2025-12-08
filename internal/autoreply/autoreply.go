@@ -32,7 +32,7 @@ type AutoReply struct {
 // New creates a new AutoReply instance
 func New(s GmailMessageSender) *AutoReply {
 	enabled := os.Getenv("ISH_AUTO_REPLY") == "true"
-	openaiKey := os.Getenv("ISH_OPENAI_KEY")
+	openaiKey := os.Getenv("OPENAI_API_KEY")
 
 	minDelay := 2
 	if val := os.Getenv("ISH_REPLY_DELAY_MIN"); val != "" {

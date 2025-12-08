@@ -55,12 +55,12 @@ func (h *Handlers) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	renderPage(w, "dashboard", map[string]any{
-		"MessageCount": 0, // TODO: implement via plugin stores
-		"ThreadCount":  0, // TODO: implement via plugin stores
-		"EventCount":   0, // TODO: implement via plugin stores
-		"PeopleCount":  0, // TODO: implement via plugin stores
-		"Tasks":        0, // TODO: implement via plugin stores
-		"Requests":     0, // TODO: implement via plugin stores
+		"MessageCount": 0, // Stats aggregation not implemented - view resources directly
+		"ThreadCount":  0, // Stats aggregation not implemented - view resources directly
+		"EventCount":   0, // Stats aggregation not implemented - view resources directly
+		"PeopleCount":  0, // Stats aggregation not implemented - view resources directly
+		"Tasks":        0, // Stats aggregation not implemented - view resources directly
+		"Requests":     0, // Stats aggregation not implemented - view resources directly
 		"Plugins":      plugins,
 	})
 }
@@ -80,12 +80,12 @@ func (h *Handlers) gmailList(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) gmailView(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Gmail view not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) gmailDelete(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Gmail delete not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) gmailForm(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +95,7 @@ func (h *Handlers) gmailForm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) gmailCreate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Gmail create not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) calendarList(w http.ResponseWriter, r *http.Request) {
@@ -111,17 +111,17 @@ func (h *Handlers) calendarForm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) calendarCreate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Calendar create not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) calendarView(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Calendar view not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) calendarDelete(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Calendar delete not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) peopleList(w http.ResponseWriter, r *http.Request) {
@@ -137,32 +137,32 @@ func (h *Handlers) peopleForm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) peopleCreate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "People create not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) peopleView(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "People view not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) peopleDelete(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "People delete not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) gmailGenerate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Gmail generate not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) calendarGenerate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Calendar generate not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) peopleGenerate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "People generate not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) tasksList(w http.ResponseWriter, r *http.Request) {
@@ -178,22 +178,22 @@ func (h *Handlers) tasksForm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) tasksCreate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Tasks create not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) tasksView(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Tasks view not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) tasksDelete(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Tasks delete not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) tasksGenerate(w http.ResponseWriter, r *http.Request) {
 	// TODO: Access Google plugin store directly
-	http.Error(w, "Tasks generate not yet implemented with plugin architecture", 501)
+	http.Error(w, "Admin UI is view-only - use API endpoints for detailed operations", http.StatusNotImplemented)
 }
 
 func (h *Handlers) logsList(w http.ResponseWriter, r *http.Request) {

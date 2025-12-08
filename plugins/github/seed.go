@@ -28,10 +28,6 @@ func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 	// Create users
 	userLogins := []string{"alice", "bob", "charlie", "diana", "eric", "frank", "grace", "henry",
 		"iris", "jack", "kate", "leo", "mary", "nick", "olive", "paul", "quinn", "rose", "sam", "tina"}
-	userNames := []string{"Alice Smith", "Bob Jones", "Charlie Brown", "Diana Prince", "Eric Chen",
-		"Frank Miller", "Grace Hopper", "Henry Ford", "Iris West", "Jack Ryan", "Kate Bishop",
-		"Leo Valdez", "Mary Jane", "Nick Fury", "Olive Garden", "Paul Atreides", "Quinn Fabray",
-		"Rose Tyler", "Sam Wilson", "Tina Fey"}
 
 	createdUsers := make([]*User, 0, users)
 	for i := 0; i < users; i++ {
@@ -39,7 +35,6 @@ func (p *GitHubPlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 		if i >= len(userLogins) {
 			login = fmt.Sprintf("%s%d", login, i)
 		}
-		_ = userNames[i%len(userNames)] // TODO: Update user name in database
 		token := fmt.Sprintf("ghp_%032d", i+1)
 
 		user, err := p.store.GetOrCreateUser(login, token)
