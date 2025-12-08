@@ -3,8 +3,10 @@
 # Binary (root directory only)
 /ish
 
-# Database files
+# Database files (including SQLite WAL and shared memory files)
 *.db
+*.db-shm
+*.db-wal
 
 # Environment files
 .env

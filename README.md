@@ -45,7 +45,13 @@ curl -H "Authorization: Bearer user:harper" \
   http://localhost:9000/gmail/v1/users/me/messages
 ```
 
-**Database Location:** ISH follows XDG Base Directory spec and stores data in `~/.local/share/ish/ish.db` by default. You can override with `--db` flag or `ISH_DB_PATH` environment variable.
+**Database Location:** ISH automatically determines the best database location using this priority:
+1. `--db` flag (highest priority, overrides all defaults)
+2. `ISH_DB_PATH` environment variable
+3. `./ish.db` if it already exists (backwards compatibility)
+4. Platform-specific default:
+   - **Linux/macOS**: `~/.local/share/ish/ish.db` (XDG Base Directory spec)
+   - **Windows**: `%LOCALAPPDATA%\ish\ish.db` (typically `C:\Users\You\AppData\Local\ish\`)
 
 **Want AI-generated data?** Set `ANTHROPIC_API_KEY` and run `./ish seed --ai`
 
