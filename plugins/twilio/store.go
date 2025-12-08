@@ -775,12 +775,16 @@ func (s *TwilioStore) ListAllAccounts(limit, offset int) ([]Account, error) {
 	var accounts []Account
 	for rows.Next() {
 		var acct Account
+		var friendlyName sql.NullString
 		err := rows.Scan(
-			&acct.AccountSid, &acct.AuthToken, &acct.FriendlyName,
+			&acct.AccountSid, &acct.AuthToken, &friendlyName,
 			&acct.Status, &acct.CreatedAt, &acct.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if friendlyName.Valid {
+			acct.FriendlyName = friendlyName.String
 		}
 		accounts = append(accounts, acct)
 	}
@@ -809,13 +813,26 @@ func (s *TwilioStore) ListAllPhoneNumbers(limit, offset int) ([]PhoneNumber, err
 	var phoneNumbers []PhoneNumber
 	for rows.Next() {
 		var pn PhoneNumber
+		var friendlyName, voiceURL, smsURL, statusCallback sql.NullString
 		err := rows.Scan(
-			&pn.Sid, &pn.AccountSid, &pn.PhoneNumber, &pn.FriendlyName,
-			&pn.VoiceURL, &pn.VoiceMethod, &pn.SmsURL, &pn.SmsMethod,
-			&pn.StatusCallback, &pn.StatusCallbackMethod, &pn.CreatedAt, &pn.UpdatedAt,
+			&pn.Sid, &pn.AccountSid, &pn.PhoneNumber, &friendlyName,
+			&voiceURL, &pn.VoiceMethod, &smsURL, &pn.SmsMethod,
+			&statusCallback, &pn.StatusCallbackMethod, &pn.CreatedAt, &pn.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if friendlyName.Valid {
+			pn.FriendlyName = friendlyName.String
+		}
+		if voiceURL.Valid {
+			pn.VoiceURL = voiceURL.String
+		}
+		if smsURL.Valid {
+			pn.SmsURL = smsURL.String
+		}
+		if statusCallback.Valid {
+			pn.StatusCallback = statusCallback.String
 		}
 		phoneNumbers = append(phoneNumbers, pn)
 	}
