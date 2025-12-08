@@ -21,7 +21,7 @@ services:
 
     # Health check to ensure service is running
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/admin"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -32,8 +32,8 @@ services:
     # Override default command if needed
     # Uncomment one of these to customize startup behavior:
 
-    # Default: Start server with existing/empty database
-    command: ["./ish", "serve", "--db", "/app/data/ish.db", "--port", "9000"]
+    # Default: Uses CMD from Dockerfile (same as below, so this line is redundant)
+    # command: ["./ish", "serve", "--db", "/app/data/ish.db", "--port", "9000"]
 
     # Option 1: Seed database on startup (runs once, then serves)
     # command: >

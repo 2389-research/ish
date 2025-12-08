@@ -11,6 +11,9 @@ README.md
 docs/
 *.md
 
+# Examples (Python integration examples, not needed for build)
+examples/
+
 # Test databases and scratch files
 *.db
 *.db-shm

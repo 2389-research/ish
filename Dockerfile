@@ -2,10 +2,10 @@
 # ABOUTME: Stage 1 builds the binary, Stage 2 creates the final lightweight container
 
 # Stage 1: Build the Go binary
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies (gcc and musl-dev needed for CGO/SQLite)
+RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
 
 WORKDIR /build
 
@@ -18,13 +18,18 @@ COPY . .
 
 # Build the binary with optimizations
 # -ldflags="-s -w" strips debug info for smaller binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o ish ./cmd/ish
+# -extldflags '-static' creates fully static binary for Alpine
+# -trimpath removes absolute paths for reproducibility
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -trimpath \
+    -ldflags="-s -w -extldflags '-static'" \
+    -o ish ./cmd/ish
 
 # Stage 2: Create minimal runtime image
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata sqlite
+# Install runtime dependencies (wget needed for health checks)
+RUN apk add --no-cache ca-certificates tzdata sqlite wget
 
 # Create non-root user for security
 RUN addgroup -g 1000 ish && \
