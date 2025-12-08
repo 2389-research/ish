@@ -1,0 +1,28 @@
+# ABOUTME: Project configuration for ISH Python integration examples.
+# ABOUTME: Defines dependencies for running example scripts against ISH APIs.
+
+[project]
+name = "ish-examples"
+version = "0.1.0"
+description = "Python integration examples for ISH fake API server"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []

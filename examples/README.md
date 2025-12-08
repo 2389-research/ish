@@ -4,34 +4,64 @@ This directory contains Python examples demonstrating how to integrate with ISH'
 
 ## Prerequisites
 
-```bash
-# Install required dependencies
-pip install requests
+**Using uv (recommended):**
 
-# Or use uv (recommended)
+```bash
+# Navigate to examples directory
+cd examples
+
+# Create virtual environment and install dependencies
+uv venv
 uv pip install requests
+
+# Run examples
+uv run python google_gmail.py
+```
+
+**Using pip (alternative):**
+
+```bash
+cd examples
+pip install requests
+python google_gmail.py
 ```
 
 ## Quick Start
 
-1. **Start ISH server with seeded data:**
+1. **Install dependencies:**
 
 ```bash
-# Seed the database
-./ish seed
+cd examples
 
-# Start the server
+# With uv (recommended)
+uv venv && uv pip install requests
+
+# OR with pip
+pip install requests
+```
+
+2. **Start ISH server with seeded data:**
+
+```bash
+# From the ISH root directory
+cd ..
+./ish seed
 ./ish serve
 ```
 
-2. **Run any example:**
+3. **Run any example:**
 
 ```bash
-# Make scripts executable
-chmod +x examples/*.py
+# From examples directory with uv
+cd examples
+uv run python google_gmail.py
+uv run python google_calendar.py
+uv run python twilio.py
 
-# Run an example
-python examples/google_gmail.py
+# OR with regular python
+python google_gmail.py
+python google_calendar.py
+python twilio.py
 ```
 
 ## Available Examples
