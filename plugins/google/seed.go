@@ -33,7 +33,7 @@ func (p *GooglePlugin) Seed(ctx context.Context, size string) (core.SeedData, er
 	// Try AI generation first (default behavior)
 	generator := seed.NewGenerator(userID)
 	genData, err := generator.Generate(ctx, numMessages, numEvents, numPeople)
-	if err == nil && len(genData.Emails) > 0 {
+	if err == nil && genData != nil && (len(genData.Emails) > 0 || len(genData.Events) > 0 || len(genData.Contacts) > 0) {
 		// Generation succeeded (either AI or generator's static fallback), use it
 		return p.seedFromAI(ctx, userID, genData, numTasks)
 	}
@@ -106,7 +106,15 @@ func (p *GooglePlugin) seedFromAI(ctx context.Context, userID string, genData *s
 			if totalTasks >= numTasks {
 				break
 			}
-			_, err := p.store.CreateTaskFromForm(title, "", "", "needsAction")
+			task := &Task{
+				ListID:    taskListObj.ID, // Use the list we just created
+				Title:     title,
+				Notes:     "",
+				Due:       "",
+				Status:    "needsAction",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}
+			_, err := p.store.CreateTask(task)
 			if err != nil {
 				log.Printf("Failed to create task '%s': %v", title, err)
 				continue
