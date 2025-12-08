@@ -1,0 +1,81 @@
+# ABOUTME: Docker Compose configuration for ISH with database persistence and optional AI seeding
+# ABOUTME: Includes service definition, volume mounts, environment variables, and helper commands
+
+services:
+  ish:
+    build: .
+    image: ish:latest
+    container_name: ish-server
+    ports:
+      - "9000:9000"
+    volumes:
+      # Persist database between container restarts
+      - ish-data:/app/data
+    environment:
+      # Optional: Set Anthropic API key for AI-powered seed generation
+      # Uncomment and add your key to enable AI seeding
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # Optional: Customize port (must match ports mapping above)
+      # - ISH_PORT=9000
+
+    # Health check to ensure service is running
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/admin"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    restart: unless-stopped
+
+    # Override default command if needed
+    # Uncomment one of these to customize startup behavior:
+
+    # Default: Start server with existing/empty database
+    command: ["./ish", "serve", "--db", "/app/data/ish.db", "--port", "9000"]
+
+    # Option 1: Seed database on startup (runs once, then serves)
+    # command: >
+    #   sh -c "./ish seed --db /app/data/ish.db &&
+    #          ./ish serve --db /app/data/ish.db --port 9000"
+
+    # Option 2: Reset and seed database every time (for testing)
+    # command: >
+    #   sh -c "./ish reset --db /app/data/ish.db --force &&
+    #          ./ish seed --db /app/data/ish.db &&
+    #          ./ish serve --db /app/data/ish.db --port 9000"
+
+volumes:
+  # Named volume for database persistence
+  ish-data:
+    driver: local
+
+# Usage examples:
+#
+# Start ISH:
+#   docker-compose up -d
+#
+# View logs:
+#   docker-compose logs -f ish
+#
+# Access admin UI:
+#   http://localhost:9000/admin
+#
+# Seed database with static data:
+#   docker-compose exec ish ./ish seed --db /app/data/ish.db
+#
+# Seed with AI-generated data (requires ANTHROPIC_API_KEY):
+#   docker-compose exec ish ./ish seed --db /app/data/ish.db --ai
+#
+# Reset database:
+#   docker-compose exec ish ./ish reset --db /app/data/ish.db --force
+#
+# Stop ISH:
+#   docker-compose down
+#
+# Stop and remove data:
+#   docker-compose down -v
+#
+# Rebuild after code changes:
+#   docker-compose up -d --build

@@ -1,0 +1,66 @@
+# ABOUTME: Dockerignore file to exclude unnecessary files from Docker build context
+# ABOUTME: Reduces build time and image size by preventing these files from being copied
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+docs/
+*.md
+
+# Test databases and scratch files
+*.db
+*.db-shm
+*.db-wal
+.scratch/
+
+# Build artifacts
+ish
+dist/
+bin/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker files (no need to copy these into the image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment files
+.env
+.env.local
+*.local
+
+# Test coverage
+coverage.out
+*.coverprofile
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if any examples use them)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Python (if any examples use Python)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
