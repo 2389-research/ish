@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -75,6 +77,12 @@ func main() {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	// Validate dbPath from flag
+	cleanPath := strings.TrimSpace(dbPath)
+	if cleanPath == "" || cleanPath == "." {
+		return fmt.Errorf("database path cannot be empty or '.'")
+	}
+
 	srv, err := newServer(dbPath)
 	if err != nil {
 		return err
@@ -130,6 +138,12 @@ func newServer(dbPath string) (http.Handler, error) {
 }
 
 func runSeed(cmd *cobra.Command, args []string) error {
+	// Validate dbPath from flag
+	cleanPath := strings.TrimSpace(dbPath)
+	if cleanPath == "" || cleanPath == "." {
+		return fmt.Errorf("database path cannot be empty or '.'")
+	}
+
 	s, err := store.New(dbPath)
 	if err != nil {
 		return err
@@ -145,6 +159,12 @@ func runSeed(cmd *cobra.Command, args []string) error {
 }
 
 func runReset(cmd *cobra.Command, args []string) error {
+	// Validate dbPath from flag
+	cleanPath := strings.TrimSpace(dbPath)
+	if cleanPath == "" || cleanPath == "." {
+		return fmt.Errorf("database path cannot be empty or '.'")
+	}
+
 	// Remove existing database
 	os.Remove(dbPath)
 
@@ -228,10 +248,11 @@ func getEnv(key, fallback string) string {
 func getDefaultDBPath() string {
 	// 1. Check environment variable first
 	if envPath := os.Getenv("ISH_DB_PATH"); envPath != "" {
-		// Validate ISH_DB_PATH is not empty after trimming whitespace
+		// Trim whitespace and clean path
+		envPath = strings.TrimSpace(envPath)
 		envPath = filepath.Clean(envPath)
 		if envPath == "" || envPath == "." {
-			log.Printf("Warning: ISH_DB_PATH is invalid ('%s'), using default path", envPath)
+			log.Printf("Warning: ISH_DB_PATH is invalid (empty or '.'), using default path")
 		} else {
 			return envPath
 		}
@@ -247,17 +268,16 @@ func getDefaultDBPath() string {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome == "" {
 		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			// Fallback to current directory if we can't get home dir
-			log.Printf("Warning: Could not determine home directory: %v, using ./ish.db", err)
+		if err != nil || homeDir == "" || homeDir == "/" {
+			// Fallback to current directory if we can't get valid home dir
+			log.Printf("Warning: Could not determine valid home directory (%q): %v, using ./ish.db", homeDir, err)
 			return cwdPath
 		}
 
 		// Use platform-appropriate data directory
 		// Windows: %LOCALAPPDATA% or ~/AppData/Local
 		// Unix/Linux/macOS: ~/.local/share (XDG spec)
-		if os.PathSeparator == '\\' {
-			// Windows
+		if runtime.GOOS == "windows" {
 			dataHome = os.Getenv("LOCALAPPDATA")
 			if dataHome == "" {
 				dataHome = filepath.Join(homeDir, "AppData", "Local")
@@ -277,6 +297,20 @@ func getDefaultDBPath() string {
 		return cwdPath
 	}
 
-	log.Printf("Using database location: %s", xdgDBPath)
+	// Verify we can write to the directory
+	testFile := filepath.Join(ishDataDir, ".write-test")
+	if f, err := os.Create(testFile); err != nil {
+		log.Printf("Warning: Cannot write to data directory %s: %v, using ./ish.db", ishDataDir, err)
+		return cwdPath
+	} else {
+		f.Close()
+		os.Remove(testFile)
+	}
+
+	// Only log in debug mode to avoid polluting --help output
+	if os.Getenv("ISH_DEBUG") != "" {
+		log.Printf("Using database location: %s", xdgDBPath)
+	}
+
 	return xdgDBPath
 }
