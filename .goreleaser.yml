@@ -15,10 +15,12 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=1
+      - CC=zig cc -target {{.Target}}
+      - CXX=zig c++ -target {{.Target}}
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -X main.version={{.Version}} -linkmode=external
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
