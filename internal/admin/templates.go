@@ -49,6 +49,9 @@ func init() {
 		"tasks-form":    "templates/tasks/form.html",
 		"tasks-view":    "templates/tasks/view.html",
 		"logs-list":     "templates/logs/list.html",
+		"plugin-list":   "templates/plugins/list.html",
+		"plugin-form":   "templates/plugins/form.html",
+		"plugin-detail": "templates/plugins/detail.html",
 	}
 
 	for name, path := range pages {

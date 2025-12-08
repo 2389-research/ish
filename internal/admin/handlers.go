@@ -26,30 +26,21 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	r.Route("/admin", func(r chi.Router) {
 		r.Get("/", h.dashboard)
 		r.Get("/guide", h.guide)
-		r.Get("/gmail", h.gmailList)
-		r.Get("/gmail/new", h.gmailForm)
-		r.Get("/gmail/{id}", h.gmailView)
-		r.Post("/gmail", h.gmailCreate)
-		r.Post("/gmail/generate", h.gmailGenerate)
-		r.Delete("/gmail/{id}", h.gmailDelete)
-		r.Get("/calendar", h.calendarList)
-		r.Get("/calendar/new", h.calendarForm)
-		r.Get("/calendar/{id}", h.calendarView)
-		r.Post("/calendar", h.calendarCreate)
-		r.Post("/calendar/generate", h.calendarGenerate)
-		r.Delete("/calendar/{id}", h.calendarDelete)
-		r.Get("/people", h.peopleList)
-		r.Get("/people/new", h.peopleForm)
-		r.Get("/people/{id}", h.peopleView)
-		r.Post("/people", h.peopleCreate)
-		r.Post("/people/generate", h.peopleGenerate)
-		r.Delete("/people/{id}", h.peopleDelete)
-		r.Get("/tasks", h.tasksList)
-		r.Get("/tasks/new", h.tasksForm)
-		r.Get("/tasks/{id}", h.tasksView)
-		r.Post("/tasks", h.tasksCreate)
-		r.Post("/tasks/generate", h.tasksGenerate)
-		r.Delete("/tasks/{id}", h.tasksDelete)
+
+		// Redirect old Google routes to new plugin routes
+		r.Get("/gmail", h.redirectToPluginRoute("/admin/plugins/google/messages"))
+		r.Get("/gmail/new", h.redirectToPluginRoute("/admin/plugins/google/messages/new"))
+		r.Get("/gmail/{id}", h.redirectGmailView)
+		r.Get("/calendar", h.redirectToPluginRoute("/admin/plugins/google/events"))
+		r.Get("/calendar/new", h.redirectToPluginRoute("/admin/plugins/google/events/new"))
+		r.Get("/calendar/{id}", h.redirectCalendarView)
+		r.Get("/people", h.redirectToPluginRoute("/admin/plugins/google/contacts"))
+		r.Get("/people/new", h.redirectToPluginRoute("/admin/plugins/google/contacts/new"))
+		r.Get("/people/{id}", h.redirectPeopleView)
+		r.Get("/tasks", h.redirectToPluginRoute("/admin/plugins/google/tasks"))
+		r.Get("/tasks/new", h.redirectToPluginRoute("/admin/plugins/google/tasks/new"))
+		r.Get("/tasks/{id}", h.redirectTasksView)
+
 		r.Get("/logs", h.logsList)
 	})
 
@@ -332,4 +323,31 @@ func getPluginDashboardData(s *store.Store) []PluginDashboardData {
 	}
 
 	return pluginData
+}
+
+// Redirect helper functions for old Google routes
+func (h *Handlers) redirectToPluginRoute(newPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, newPath, http.StatusMovedPermanently)
+	}
+}
+
+func (h *Handlers) redirectGmailView(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	http.Redirect(w, r, "/admin/plugins/google/messages/"+id, http.StatusMovedPermanently)
+}
+
+func (h *Handlers) redirectCalendarView(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	http.Redirect(w, r, "/admin/plugins/google/events/"+id, http.StatusMovedPermanently)
+}
+
+func (h *Handlers) redirectPeopleView(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	http.Redirect(w, r, "/admin/plugins/google/contacts/"+id, http.StatusMovedPermanently)
+}
+
+func (h *Handlers) redirectTasksView(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	http.Redirect(w, r, "/admin/plugins/google/tasks/"+id, http.StatusMovedPermanently)
 }

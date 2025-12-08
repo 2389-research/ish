@@ -5,12 +5,9 @@ package admin
 
 import (
 	"context"
-	"fmt"
-	"html"
 	"html/template"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
@@ -74,11 +71,12 @@ func (h *PluginHandlers) PluginListView(w http.ResponseWriter, r *http.Request) 
 	pageData := pluginListData{
 		PluginName:   pluginName,
 		ResourceName: resourceSchema.Name,
+		ResourceSlug: resourceSlug,
 		ListHTML:     template.HTML(listHTML),
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	renderPluginPage(w, "plugin-list", pageData)
+	renderPage(w, "plugin-list", pageData)
 }
 
 // PluginCreateForm renders a create form using the schema renderer
@@ -110,11 +108,12 @@ func (h *PluginHandlers) PluginCreateForm(w http.ResponseWriter, r *http.Request
 	pageData := pluginFormData{
 		PluginName:   pluginName,
 		ResourceName: resourceSchema.Name,
+		ResourceSlug: resourceSlug,
 		FormHTML:     template.HTML(formHTML),
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	renderPluginPage(w, "plugin-form", pageData)
+	renderPage(w, "plugin-form", pageData)
 }
 
 // PluginDetailView renders a detail view using the schema renderer
@@ -173,11 +172,13 @@ func (h *PluginHandlers) PluginDetailView(w http.ResponseWriter, r *http.Request
 	pageData := pluginDetailData{
 		PluginName:   pluginName,
 		ResourceName: resourceSchema.Name,
+		ResourceSlug: resourceSlug,
+		ResourceID:   id,
 		DetailHTML:   template.HTML(detailHTML),
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	renderPluginPage(w, "plugin-detail", pageData)
+	renderPage(w, "plugin-detail", pageData)
 }
 
 // PluginEditForm renders an edit form using the schema renderer
@@ -236,11 +237,12 @@ func (h *PluginHandlers) PluginEditForm(w http.ResponseWriter, r *http.Request) 
 	pageData := pluginFormData{
 		PluginName:   pluginName,
 		ResourceName: resourceSchema.Name,
+		ResourceSlug: resourceSlug,
 		FormHTML:     template.HTML(formHTML),
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	renderPluginPage(w, "plugin-form", pageData)
+	renderPage(w, "plugin-form", pageData)
 }
 
 // Helper functions
@@ -257,71 +259,21 @@ func findResourceSchema(schema core.PluginSchema, slug string) *core.ResourceSch
 type pluginListData struct {
 	PluginName   string
 	ResourceName string
+	ResourceSlug string
 	ListHTML     template.HTML
 }
 
 type pluginFormData struct {
 	PluginName   string
 	ResourceName string
+	ResourceSlug string
 	FormHTML     template.HTML
 }
 
 type pluginDetailData struct {
 	PluginName   string
 	ResourceName string
+	ResourceSlug string
+	ResourceID   string
 	DetailHTML   template.HTML
-}
-
-func renderPluginPage(w http.ResponseWriter, templateName string, data interface{}) error {
-	// For now, render a simple HTML wrapper
-	// This will be replaced with proper template rendering later
-	switch templateName {
-	case "plugin-list":
-		d := data.(pluginListData)
-		htmlStr := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head><title>%s - %s</title></head>
-<body>
-<h1>%s - %s</h1>
-%s
-</body>
-</html>`, html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName),
-			html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName), d.ListHTML)
-		w.Write([]byte(htmlStr))
-
-	case "plugin-form":
-		d := data.(pluginFormData)
-		htmlStr := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head><title>%s - %s</title></head>
-<body>
-<h1>%s - %s</h1>
-%s
-</body>
-</html>`, html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName),
-			html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName), d.FormHTML)
-		w.Write([]byte(htmlStr))
-
-	case "plugin-detail":
-		d := data.(pluginDetailData)
-		htmlStr := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head><title>%s - %s</title></head>
-<body>
-<h1>%s - %s</h1>
-%s
-</body>
-</html>`, html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName),
-			html.EscapeString(d.PluginName), html.EscapeString(d.ResourceName), d.DetailHTML)
-		w.Write([]byte(htmlStr))
-	}
-	return nil
-}
-
-// Helper to capitalize first letter
-func capitalize(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }

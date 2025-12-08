@@ -1,0 +1,10 @@
+{{define "content"}}
+<div class="mb-6 flex justify-between items-center">
+    <h1 class="text-3xl font-bold text-gray-900">{{.PluginName}} - {{.ResourceName}}</h1>
+    <a href="/admin/plugins/{{.PluginName}}/{{.ResourceSlug}}/new" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+        New {{.ResourceName}}
+    </a>
+</div>
+
+{{.ListHTML}}
+{{end}}
