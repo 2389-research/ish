@@ -216,6 +216,7 @@ func seedData(s *store.Store, pluginFilter string) error {
 	// Seed each plugin (optionally filtered by name)
 	totalRecords := 0
 	seededCount := 0
+	hasUniqueError := false
 	for _, plugin := range core.All() {
 		// Skip if filter is set and doesn't match
 		if pluginFilter != "" && plugin.Name() != pluginFilter {
@@ -224,7 +225,13 @@ func seedData(s *store.Store, pluginFilter string) error {
 
 		seedData, err := plugin.Seed(context.Background(), "medium")
 		if err != nil {
-			log.Printf("Failed to seed %s: %v", plugin.Name(), err)
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "UNIQUE constraint failed") {
+				log.Printf("Failed to seed %s: %v", plugin.Name(), err)
+				hasUniqueError = true
+			} else {
+				log.Printf("Failed to seed %s: %v", plugin.Name(), err)
+			}
 			continue
 		}
 
@@ -235,6 +242,11 @@ func seedData(s *store.Store, pluginFilter string) error {
 			}
 			seededCount++
 		}
+	}
+
+	// Show helpful message if UNIQUE constraint errors occurred
+	if hasUniqueError {
+		log.Println("\nNote: Database already contains seed data. Use 'ish reset' to clear and reseed.")
 	}
 
 	// Check if plugin filter didn't match anything

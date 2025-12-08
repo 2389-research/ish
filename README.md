@@ -8,7 +8,7 @@
 - 🔐 **Realistic Authentication**: OAuth 2.0 authorization flows, token refresh/revocation, or simple bearer tokens
 - 💾 **Persistent SQLite Storage**: All data stored locally in an inspectable database
 - 🎨 **Auto-Generated Admin UI**: Web interface to view/manage all resources across plugins
-- 🤖 **AI-Powered Test Data**: Generate realistic emails, contacts, events using Claude AI
+- 📝 **Realistic Test Data**: Pre-seeded with realistic emails, contacts, events, repositories, and more
 - 📊 **Request Logging**: Track all API calls with timestamps and plugin attribution
 - 🔍 **Full Query Support**: Gmail search syntax, Calendar time filtering, pagination, incremental sync
 - 🚀 **Plugin Architecture**: Add your own mock APIs by implementing a simple interface
@@ -52,8 +52,6 @@ curl -H "Authorization: Bearer user:harper" \
 4. Platform-specific default:
    - **Linux/macOS**: `~/.local/share/ish/ish.db` (XDG Base Directory spec)
    - **Windows**: `%LOCALAPPDATA%\ish\ish.db` (typically `C:\Users\You\AppData\Local\ish\`)
-
-**Want AI-generated data?** Set `ANTHROPIC_API_KEY` and run `./ish seed --ai`
 
 **View everything in your browser:** Visit `http://localhost:9000/admin`
 
@@ -403,25 +401,21 @@ Visit `http://localhost:9000/admin` for a web interface to:
 
 - View and manage resources from all plugins (Messages, Events, Contacts, Tasks)
 - Browse request logs with plugin attribution
-- Generate AI-powered realistic test data (requires `ANTHROPIC_API_KEY`)
 - See sample curl commands in the Getting Started guide
 
 The admin UI is **schema-driven**: plugins define their data structure, and ISH automatically generates forms, lists, and actions.
 
 ## Seeding Data
 
-### Static seed data
 ```bash
-./ish seed --db ish.db
+# Seed the database with test data
+./ish seed
+
+# Or reset and reseed (clears existing data first)
+./ish reset
 ```
 
-### AI-generated data (requires Anthropic API key)
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-./ish seed --db ish.db --ai
-```
-
-Or generate via the admin UI at `/admin`.
+**Note:** If you need to reseed, use `./ish reset` to clear existing data first, as the seed command is not idempotent and will fail on duplicate entries.
 
 ## Documentation
 
