@@ -5,38 +5,23 @@ before:
     - go mod tidy
 
 builds:
-  - id: darwin-amd64
+  # Darwin builds use native CGO (we're on macOS runner)
+  - id: darwin
     main: ./cmd/ish
     binary: ish
     goos:
       - darwin
     goarch:
       - amd64
-    env:
-      - CGO_ENABLED=1
-      - CC=zig cc -target x86_64-macos
-      - CXX=zig c++ -target x86_64-macos
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-
-  - id: darwin-arm64
-    main: ./cmd/ish
-    binary: ish
-    goos:
-      - darwin
-    goarch:
       - arm64
     env:
       - CGO_ENABLED=1
-      - CC=zig cc -target aarch64-macos
-      - CXX=zig c++ -target aarch64-macos
     flags:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}}
 
+  # Linux builds use Zig for cross-compilation
   - id: linux-amd64
     main: ./cmd/ish
     binary: ish
