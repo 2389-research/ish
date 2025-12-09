@@ -42,7 +42,7 @@ go build -o ish ./cmd/ish
 ./ish serve --port 9000
 
 # 4. Test it out!
-curl -H "Authorization: Bearer user:harper" \
+curl -H "Authorization: Bearer user:me" \
   http://localhost:9000/gmail/v1/users/me/messages
 ```
 
@@ -257,7 +257,7 @@ Authorization: Bearer user:USERNAME
 
 For example:
 ```bash
-curl -H "Authorization: Bearer user:harper" \
+curl -H "Authorization: Bearer user:me" \
   http://localhost:9000/gmail/v1/users/me/messages
 ```
 
@@ -288,6 +288,8 @@ POST /oauth/{plugin}/token
 ```
 
 Supported OAuth plugins: `google`, `github`, and any other plugin that implements OAuth.
+
+**Note:** For API testing, use simple bearer tokens (`user:USERNAME`) instead of OAuth tokens. OAuth flow is implemented for testing authorization code exchange and token management, but tokens are not currently validated for API authentication.
 
 ## API Endpoints
 
@@ -328,6 +330,14 @@ Supported OAuth plugins: `google`, `github`, and any other plugin that implement
 | `GET /tasks/v1/lists/{listId}/tasks/{taskId}` | Get task details |
 | `PATCH /tasks/v1/lists/{listId}/tasks/{taskId}` | Update a task |
 | `DELETE /tasks/v1/lists/{listId}/tasks/{taskId}` | Delete a task |
+
+### Health Check
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /healthz` | Health check endpoint (returns `{"ok": true}`) |
+
+Useful for Docker health checks, Kubernetes readiness probes, and monitoring.
 
 ## Plugin System
 

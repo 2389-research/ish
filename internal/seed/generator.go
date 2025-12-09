@@ -1,5 +1,5 @@
 // ABOUTME: AI-powered data generator for realistic fake Google API data.
-// ABOUTME: Uses OpenAI gpt-5-nano to generate emails, events, and contacts.
+// ABOUTME: Uses OpenAI gpt-5-mini to generate emails, events, and contacts.
 
 package seed
 
