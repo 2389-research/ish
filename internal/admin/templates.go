@@ -18,22 +18,17 @@ var (
 	partialTmpls *template.Template
 )
 
-func init() {
-	// Parse layout as base
-	layoutTmpl = template.Must(template.ParseFS(templateFS, "templates/layout.html"))
+// partialPaths defines all row templates used for htmx partial rendering
+var partialPaths = []string{
+	"templates/gmail/row.html",
+	"templates/calendar/row.html",
+	"templates/people/row.html",
+	"templates/tasks/row.html",
+}
 
-	// Parse partials (row templates for htmx)
-	partialTmpls = template.Must(template.ParseFS(templateFS,
-		"templates/gmail/row.html",
-		"templates/calendar/row.html",
-		"templates/people/row.html",
-		"templates/tasks/row.html",
-	))
-
-	// Parse each page template with its own copy of layout
-	pageTmpls = make(map[string]*template.Template)
-
-	pages := map[string]string{
+// pageDefinitions maps page names to their template files
+func getPageDefinitions() map[string]string {
+	return map[string]string{
 		"dashboard":     "templates/dashboard.html",
 		"guide":         "templates/guide.html",
 		"gmail-list":    "templates/gmail/list.html",
@@ -53,20 +48,41 @@ func init() {
 		"plugin-form":   "templates/plugins/form.html",
 		"plugin-detail": "templates/plugins/detail.html",
 	}
+}
+
+// parsePartialTemplates creates a template bundle with all row templates for htmx rendering
+func parsePartialTemplates() *template.Template {
+	return template.Must(template.ParseFS(templateFS, partialPaths...))
+}
+
+// parsePageTemplates creates a map of page templates, each with layout and partials
+func parsePageTemplates() map[string]*template.Template {
+	templates := make(map[string]*template.Template)
+	pages := getPageDefinitions()
 
 	for name, path := range pages {
-		// Clone layout and add the page template
+		// Clone layout and add page template
 		tmpl := template.Must(layoutTmpl.Clone())
 		tmpl = template.Must(tmpl.ParseFS(templateFS, path))
-		// Also add partials for pages that need them
-		tmpl = template.Must(tmpl.ParseFS(templateFS,
-			"templates/gmail/row.html",
-			"templates/calendar/row.html",
-			"templates/people/row.html",
-			"templates/tasks/row.html",
-		))
-		pageTmpls[name] = tmpl
+
+		// Add all partial templates to support htmx rendering
+		tmpl = template.Must(tmpl.ParseFS(templateFS, partialPaths...))
+
+		templates[name] = tmpl
 	}
+
+	return templates
+}
+
+func init() {
+	// Parse layout as base
+	layoutTmpl = template.Must(template.ParseFS(templateFS, "templates/layout.html"))
+
+	// Parse partials (row templates for htmx)
+	partialTmpls = parsePartialTemplates()
+
+	// Parse each page template with its own copy of layout
+	pageTmpls = parsePageTemplates()
 }
 
 func renderPage(w io.Writer, page string, data any) error {

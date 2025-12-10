@@ -291,6 +291,134 @@ func TestGetRequestLogsWithPluginFilter(t *testing.T) {
 	}
 }
 
+// TestGetRequestLogsWithPathPrefixEscaping tests SQL LIKE escaping with special characters
+func TestGetRequestLogsWithPathPrefixEscaping(t *testing.T) {
+	s := setupTestDB(t)
+	defer s.Close()
+
+	now := time.Now()
+
+	// Insert test data with special characters in paths
+	testLogs := []*RequestLog{
+		{PluginName: "google", Method: "GET", Path: "/api/v1/users/test_user", StatusCode: 200, DurationMs: 10, Timestamp: now},
+		{PluginName: "google", Method: "GET", Path: "/api/v1/users/test%user", StatusCode: 200, DurationMs: 15, Timestamp: now},
+		{PluginName: "google", Method: "GET", Path: "/api/v1/user_data/info", StatusCode: 200, DurationMs: 12, Timestamp: now},
+		{PluginName: "google", Method: "GET", Path: "/api/v2/users/data", StatusCode: 200, DurationMs: 8, Timestamp: now},
+		{PluginName: "tasks", Method: "GET", Path: "/tasks_old/list", StatusCode: 200, DurationMs: 5, Timestamp: now},
+	}
+
+	for _, log := range testLogs {
+		if err := s.LogRequest(log); err != nil {
+			t.Fatalf("Failed to insert test log: %v", err)
+		}
+	}
+
+	// Test filtering with underscore (should not match as wildcard)
+	logs, err := s.GetRequestLogs(&RequestLogQuery{
+		PathPrefix: "/api/v1/user",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with underscore path failed: %v", err)
+	}
+	// Should match paths starting with "/api/v1/user" - not interpreting _ as single-char wildcard
+	if len(logs) < 1 {
+		t.Errorf("Expected at least 1 log for /api/v1/user prefix, got %d", len(logs))
+	}
+	for _, log := range logs {
+		if !contains(log.Path, "/api/v1/user") {
+			t.Errorf("Expected path to start with /api/v1/user, got %s", log.Path)
+		}
+	}
+
+	// Test filtering with percent character (should not match as wildcard)
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PathPrefix: "/api/v1/users/test%",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with percent path failed: %v", err)
+	}
+	// Should match the exact path "/api/v1/users/test%user" only
+	expectedCount := 1
+	if len(logs) != expectedCount {
+		t.Errorf("Expected %d log with test%% prefix, got %d", expectedCount, len(logs))
+	}
+	if len(logs) > 0 && logs[0].Path != "/api/v1/users/test%user" {
+		t.Errorf("Expected path /api/v1/users/test%%user, got %s", logs[0].Path)
+	}
+
+	// Test standard prefix matching
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PathPrefix: "/api/v1/users",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs with standard prefix failed: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Errorf("Expected 2 logs for /api/v1/users prefix, got %d", len(logs))
+	}
+}
+
+// TestEscapeSQLLikeIntegration tests that escaping works in actual SQL queries
+func TestEscapeSQLLikeIntegration(t *testing.T) {
+	s := setupTestDB(t)
+	defer s.Close()
+
+	now := time.Now()
+
+	// Insert logs with special characters
+	specialLogs := []*RequestLog{
+		{PluginName: "test", Method: "GET", Path: "normal/path", StatusCode: 200, DurationMs: 10, Timestamp: now},
+		{PluginName: "test", Method: "GET", Path: "path/with_underscore", StatusCode: 200, DurationMs: 10, Timestamp: now},
+		{PluginName: "test", Method: "GET", Path: "path/with%percent", StatusCode: 200, DurationMs: 10, Timestamp: now},
+		{PluginName: "test", Method: "GET", Path: "path\\with\\backslash", StatusCode: 200, DurationMs: 10, Timestamp: now},
+	}
+
+	for _, log := range specialLogs {
+		if err := s.LogRequest(log); err != nil {
+			t.Fatalf("Failed to insert test log: %v", err)
+		}
+	}
+
+	// Test 1: Underscore should not be treated as wildcard
+	logs, err := s.GetRequestLogs(&RequestLogQuery{
+		PathPrefix: "path/with_under",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs failed: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Path != "path/with_underscore" {
+		t.Errorf("Underscore escape failed: expected 1 log, got %d", len(logs))
+	}
+
+	// Test 2: Percent should not be treated as wildcard
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PathPrefix: "path/with%per",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs failed: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Path != "path/with%percent" {
+		t.Errorf("Percent escape failed: expected 1 log, got %d", len(logs))
+	}
+
+	// Test 3: Backslash should be escaped properly
+	logs, err = s.GetRequestLogs(&RequestLogQuery{
+		PathPrefix: "path\\with\\back",
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("GetRequestLogs failed: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Path != "path\\with\\backslash" {
+		t.Errorf("Backslash escape failed: expected 1 log, got %d", len(logs))
+	}
+}
+
 // Helper to setup a test database
 func setupTestDB(t *testing.T) *Store {
 	s, err := New(":memory:")
@@ -298,4 +426,14 @@ func setupTestDB(t *testing.T) *Store {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
 	return s
+}
+
+// Helper to check substring presence
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

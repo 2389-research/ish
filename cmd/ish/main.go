@@ -153,18 +153,41 @@ Warning: This permanently deletes all data in the database!`,
 	}
 }
 
-// validateAndCleanDBPath validates and cleans a database path
+// validateAndCleanDBPath validates and cleans a database path.
+// Handles Unix/Linux, macOS, and Windows paths (including UNC and drive letters).
 func validateAndCleanDBPath(path string) (string, error) {
 	cleanPath := strings.TrimSpace(path)
 	cleanPath = filepath.Clean(cleanPath)
 
+	// Reject empty and root-like paths
 	if cleanPath == "" || cleanPath == "." || cleanPath == "/" {
 		return "", fmt.Errorf("database path cannot be empty, '.', or '/'")
+	}
+
+	// Windows: reject bare drive letters (e.g., "C:", "D:")
+	if runtime.GOOS == "windows" && len(cleanPath) == 2 && cleanPath[1] == ':' {
+		return "", fmt.Errorf("database path cannot be a bare drive letter")
 	}
 
 	// Check for path traversal attempts
 	if strings.Contains(cleanPath, "..") {
 		return "", fmt.Errorf("database path cannot contain '..'")
+	}
+
+	// Reject known problematic patterns
+	badPatterns := []string{
+		".git",
+		".svn",
+		"node_modules",
+		".env",
+		"credentials",
+		"secret",
+	}
+	lowerPath := strings.ToLower(cleanPath)
+	for _, pattern := range badPatterns {
+		if strings.Contains(lowerPath, pattern) {
+			return "", fmt.Errorf("database path cannot contain '%s' directory", pattern)
+		}
 	}
 
 	return cleanPath, nil

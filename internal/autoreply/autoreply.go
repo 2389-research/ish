@@ -66,17 +66,29 @@ func (ar *AutoReply) GenerateReply(userID, from, to, subject, body string, threa
 		return
 	}
 
-	// Run in background goroutine
+	// Run in background goroutine with timeout context
 	go func() {
+		// Create context with 5-minute timeout for entire operation
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
 		// Random delay
 		delay := time.Duration(ar.minDelay+rand.Intn(ar.maxDelay-ar.minDelay+1)) * time.Second
-		time.Sleep(delay)
+
+		// Wait with context cancellation support
+		select {
+		case <-time.After(delay):
+			// Delay completed, continue
+		case <-ctx.Done():
+			log.Printf("Auto-reply cancelled for message from %s: %v", from, ctx.Err())
+			return
+		}
 
 		// Generate reply content
 		var replyBody string
 		if ar.openaiKey != "" {
 			var err error
-			replyBody, err = ar.generateWithOpenAI(subject, from, body)
+			replyBody, err = ar.generateWithOpenAI(ctx, subject, from, body)
 			if err != nil {
 				log.Printf("OpenAI generation failed, using template: %v", err)
 				replyBody = ar.getRandomTemplate()
@@ -100,8 +112,9 @@ func (ar *AutoReply) GenerateReply(userID, from, to, subject, body string, threa
 	}()
 }
 
-func (ar *AutoReply) generateWithOpenAI(subject, from, body string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func (ar *AutoReply) generateWithOpenAI(ctx context.Context, subject, from, body string) (string, error) {
+	// Create a child context with 30-second timeout for OpenAI request
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	client := openai.NewClient(ar.openaiKey)
@@ -119,7 +132,7 @@ Generate a realistic, professional email reply that:
 
 Reply (body only, no greeting or signature):`, from, subject, body)
 
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	resp, err := client.CreateChatCompletion(reqCtx, openai.ChatCompletionRequest{
 		Model: openai.GPT4oMini,
 		Messages: []openai.ChatCompletionMessage{
 			{
