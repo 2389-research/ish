@@ -4,10 +4,38 @@
 package store
 
 import (
+	"fmt"
 	"log"
-	"strings"
 	"time"
 )
+
+// timestampFormats are the supported timestamp formats from SQLite
+// SQLite can return timestamps in multiple formats depending on storage and query
+var timestampFormats = []string{
+	"2006-01-02 15:04:05.000",        // With milliseconds
+	"2006-01-02 15:04:05",            // Without milliseconds
+	time.RFC3339Nano,                 // RFC3339 with nanoseconds (2006-01-02T15:04:05.999999999Z07:00)
+	time.RFC3339,                      // RFC3339 (2006-01-02T15:04:05Z07:00)
+}
+
+// parseTimestamp parses a timestamp string from SQLite, handling time zones.
+// SQLite stores timestamps as TEXT in various formats. This function handles
+// timezone-aware parsing and defaults to UTC if no timezone is specified.
+func parseTimestamp(timestamp string) (time.Time, error) {
+	// Try each format
+	for _, format := range timestampFormats {
+		if parsedTime, err := time.Parse(format, timestamp); err == nil {
+			// If the time has a local location (no timezone info), assume UTC
+			if parsedTime.Location() == time.Local {
+				parsedTime = parsedTime.UTC()
+			}
+			return parsedTime, nil
+		}
+	}
+
+	// If no format matched, return error
+	return time.Time{}, fmt.Errorf("unable to parse timestamp '%s' with any known format", timestamp)
+}
 
 // RequestLog represents an HTTP request log entry
 type RequestLog struct {
@@ -81,10 +109,8 @@ func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
 		args = append(args, q.Method)
 	}
 	if q.PathPrefix != "" {
-		// Escape SQL wildcard characters (escape backslash first!)
-		escaped := strings.ReplaceAll(q.PathPrefix, "\\", "\\\\")
-		escaped = strings.ReplaceAll(escaped, "%", "\\%")
-		escaped = strings.ReplaceAll(escaped, "_", "\\_")
+		// Use helper function to escape SQL LIKE pattern
+		escaped := escapeSQLLike(q.PathPrefix)
 		query += " AND path LIKE ? ESCAPE '\\'"
 		args = append(args, escaped+"%")
 	}
@@ -116,8 +142,8 @@ func (s *Store) GetRequestLogs(q *RequestLogQuery) ([]*RequestLog, error) {
 			return nil, err
 		}
 
-		// Parse timestamp
-		parsedTime, err := time.Parse("2006-01-02 15:04:05", timestamp)
+		// Parse timestamp with timezone awareness
+		parsedTime, err := parseTimestamp(timestamp)
 		if err != nil {
 			log.Printf("Error parsing timestamp '%s' for request log ID %d: %v", timestamp, entry.ID, err)
 			// Use zero time as fallback
@@ -288,8 +314,8 @@ func (s *Store) GetRecentRequests(pluginName string, limit int) ([]*RequestLog, 
 			return nil, err
 		}
 
-		// Parse timestamp
-		parsedTime, err := time.Parse("2006-01-02 15:04:05", timestamp)
+		// Parse timestamp with timezone awareness
+		parsedTime, err := parseTimestamp(timestamp)
 		if err != nil {
 			log.Printf("Error parsing timestamp '%s' for request log ID %d: %v", timestamp, entry.ID, err)
 			// Use zero time as fallback
