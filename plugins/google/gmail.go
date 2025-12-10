@@ -133,16 +133,13 @@ func (p *GooglePlugin) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	messageID := chi.URLParam(r, "messageId")
 
-	// Check if message exists first
-	_, err := p.store.GetGmailMessage(userID, messageID)
-	if err != nil {
-		writeError(w, 404, "Message not found", "NOT_FOUND")
-		return
-	}
-
-	// Delete the message
-	if err := p.store.DeleteGmailMessage(messageID); err != nil {
-		writeError(w, 500, "Failed to delete message", "INTERNAL")
+	// Delete the message (includes user ownership check)
+	if err := p.store.DeleteGmailMessage(userID, messageID); err != nil {
+		if err.Error() == "message not found" {
+			writeError(w, 404, "Message not found", "NOT_FOUND")
+		} else {
+			writeError(w, 500, "Failed to delete message", "INTERNAL")
+		}
 		return
 	}
 
@@ -194,7 +191,10 @@ func (p *GooglePlugin) trashMessage(w http.ResponseWriter, r *http.Request) {
 	// Parse payload JSON
 	var payload map[string]any
 	if msg.Payload != "" {
-		json.Unmarshal([]byte(msg.Payload), &payload)
+		if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
+			writeError(w, 500, "Failed to parse message payload", "INTERNAL")
+			return
+		}
 	}
 
 	resp := map[string]any{
@@ -402,23 +402,27 @@ func parseEmail(email string) (map[string]string, string) {
 		body = parts[1]
 	}
 
-	// Parse headers
+	// Parse headers with proper continuation line handling
+	var currentHeader string
 	for _, line := range headerLines {
-		line = strings.TrimSpace(line)
+		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			continue
 		}
 
-		// Handle multi-line headers
+		// Handle multi-line headers (RFC 2822 folding)
 		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
-			continue // Skip continuation lines for simplicity
+			if currentHeader != "" {
+				headers[currentHeader] += " " + strings.TrimSpace(line)
+			}
+			continue
 		}
 
 		colonIdx := strings.Index(line, ":")
 		if colonIdx > 0 {
-			name := strings.TrimSpace(line[:colonIdx])
+			currentHeader = strings.TrimSpace(line[:colonIdx])
 			value := strings.TrimSpace(line[colonIdx+1:])
-			headers[name] = value
+			headers[currentHeader] = value
 		}
 	}
 
@@ -456,13 +460,3 @@ func writeError(w http.ResponseWriter, code int, message, status string) {
 	}
 }
 
-// contains checks if a comma-separated string contains a specific value
-func contains(s, substr string) bool {
-	parts := strings.Split(s, ",")
-	for _, part := range parts {
-		if strings.TrimSpace(part) == substr {
-			return true
-		}
-	}
-	return false
-}

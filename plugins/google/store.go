@@ -45,6 +45,7 @@ func (s *GoogleStore) initTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_id ON gmail_messages(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_gmail_messages_thread_id ON gmail_messages(thread_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_gmail_messages_internal_date ON gmail_messages(internal_date)`,
+		`CREATE INDEX IF NOT EXISTS idx_gmail_messages_label_ids ON gmail_messages(label_ids)`,
 
 		`CREATE TABLE IF NOT EXISTS gmail_threads (
 			id TEXT PRIMARY KEY,
@@ -287,8 +288,12 @@ func (s *GoogleStore) ListGmailMessages(userID string, maxResults int, pageToken
 		filters := parseGmailQuery(query)
 		for _, label := range filters.Labels {
 			// Use JSON contains check for label_ids array
-			sqlQuery += " AND label_ids LIKE ?"
-			args = append(args, "%\""+label+"\"%")
+			// Escape special SQL LIKE characters to prevent injection
+			sqlQuery += " AND label_ids LIKE ? ESCAPE '\\'"
+			escaped := strings.ReplaceAll(label, "\\", "\\\\")
+			escaped = strings.ReplaceAll(escaped, "%", "\\%")
+			escaped = strings.ReplaceAll(escaped, "_", "\\_")
+			args = append(args, "%\""+escaped+"\"%")
 		}
 		if filters.AfterDate > 0 {
 			sqlQuery += " AND internal_date >= ?"
@@ -442,9 +447,16 @@ func (s *GoogleStore) ListAllGmailMessages() ([]GmailMessageView, error) {
 	return messages, nil
 }
 
-func (s *GoogleStore) DeleteGmailMessage(id string) error {
-	_, err := s.db.Exec("DELETE FROM gmail_messages WHERE id = ?", id)
-	return err
+func (s *GoogleStore) DeleteGmailMessage(userID, id string) error {
+	result, err := s.db.Exec("DELETE FROM gmail_messages WHERE id = ? AND user_id = ?", id, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("message not found")
+	}
+	return nil
 }
 
 func (s *GoogleStore) UpdateGmailMessageLabels(userID, messageID string, labelIDs []string) error {

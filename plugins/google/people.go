@@ -15,13 +15,17 @@ import (
 )
 
 func (p *GooglePlugin) registerPeopleRoutes(r chi.Router) {
-	r.Get("/v1/people/me/connections", p.listConnections)
-	r.Get("/v1/people/{resourceId}", p.getPerson)
-	r.Get("/v1/people:searchContacts", p.searchContacts)
-	r.Post("/v1/people:createContact", p.createContact)
-	r.Get("/people/v1/people:searchContacts", p.searchContacts)
-	r.Get("/people/v1/people/{resourceId}", p.getPerson)
-	r.Post("/people/v1/people:createContact", p.createContact)
+	// Register People API v1 routes under both /v1 and /people/v1 prefixes
+	// for compatibility with different Google API client configurations
+	registerPeopleV1Routes := func(r chi.Router) {
+		r.Get("/people/me/connections", p.listConnections)
+		r.Get("/people/{resourceId}", p.getPerson)
+		r.Get("/people:searchContacts", p.searchContacts)
+		r.Post("/people:createContact", p.createContact)
+	}
+
+	r.Route("/v1", registerPeopleV1Routes)
+	r.Route("/people/v1", registerPeopleV1Routes)
 }
 
 func (p *GooglePlugin) listConnections(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +209,12 @@ func (p *GooglePlugin) createContact(w http.ResponseWriter, r *http.Request) {
 				email = value
 			}
 		}
+	}
+
+	// Validate that at least one field is provided
+	if name == "" && email == "" {
+		writeError(w, 400, "Contact must have at least a name or email", "INVALID_ARGUMENT")
+		return
 	}
 
 	// Create the contact
