@@ -31,6 +31,7 @@ func (p *GooglePlugin) Health() core.HealthStatus {
 }
 
 func (p *GooglePlugin) RegisterRoutes(r chi.Router) {
+	p.registerDiscoveryRoutes(r)
 	p.registerGmailRoutes(r)
 	p.registerCalendarRoutes(r)
 	p.registerPeopleRoutes(r)

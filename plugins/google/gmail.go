@@ -31,6 +31,8 @@ func (p *GooglePlugin) registerGmailRoutes(r chi.Router) {
 		r.Get("/messages", p.listMessages)
 		r.Post("/messages/send", p.sendMessage)
 		r.Get("/messages/{messageId}", p.getMessage)
+		r.Delete("/messages/{messageId}", p.deleteMessage)
+		r.Post("/messages/{messageId}/trash", p.trashMessage)
 		r.Get("/messages/{messageId}/attachments/{attachmentId}", p.getAttachment)
 		r.Get("/history", p.listHistory)
 	})
@@ -105,6 +107,94 @@ func (p *GooglePlugin) getMessage(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
 		writeError(w, 500, "Failed to parse message payload", "INTERNAL")
 		return
+	}
+
+	resp := map[string]any{
+		"id":           msg.ID,
+		"threadId":     msg.ThreadID,
+		"labelIds":     msg.LabelIDs,
+		"snippet":      msg.Snippet,
+		"internalDate": strconv.FormatInt(msg.InternalDate, 10),
+		"payload":      payload,
+	}
+
+	writeJSON(w, resp)
+}
+
+func (p *GooglePlugin) deleteMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
+	userID := chi.URLParam(r, "userId")
+	if userID == "me" {
+		userID = auth.UserFromContext(r.Context())
+	}
+	messageID := chi.URLParam(r, "messageId")
+
+	// Check if message exists first
+	_, err := p.store.GetGmailMessage(userID, messageID)
+	if err != nil {
+		writeError(w, 404, "Message not found", "NOT_FOUND")
+		return
+	}
+
+	// Delete the message
+	if err := p.store.DeleteGmailMessage(messageID); err != nil {
+		writeError(w, 500, "Failed to delete message", "INTERNAL")
+		return
+	}
+
+	// Gmail DELETE returns 204 No Content on success
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (p *GooglePlugin) trashMessage(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
+	userID := chi.URLParam(r, "userId")
+	if userID == "me" {
+		userID = auth.UserFromContext(r.Context())
+	}
+	messageID := chi.URLParam(r, "messageId")
+
+	// Get the message
+	msg, err := p.store.GetGmailMessage(userID, messageID)
+	if err != nil {
+		writeError(w, 404, "Message not found", "NOT_FOUND")
+		return
+	}
+
+	// Add TRASH label if not already present
+	labelIDs := msg.LabelIDs
+	hasTrash := false
+	for _, label := range labelIDs {
+		if label == "TRASH" {
+			hasTrash = true
+			break
+		}
+	}
+	if !hasTrash {
+		labelIDs = append(labelIDs, "TRASH")
+	}
+
+	// Update message with TRASH label
+	if err := p.store.UpdateGmailMessageLabels(userID, messageID, labelIDs); err != nil {
+		writeError(w, 500, "Failed to trash message", "INTERNAL")
+		return
+	}
+
+	// Return the updated message
+	msg.LabelIDs = labelIDs
+
+	// Parse payload JSON
+	var payload map[string]any
+	if msg.Payload != "" {
+		json.Unmarshal([]byte(msg.Payload), &payload)
 	}
 
 	resp := map[string]any{
@@ -364,4 +454,15 @@ func writeError(w http.ResponseWriter, code int, message, status string) {
 		log.Printf("Failed to encode error response: %v", err)
 		// Note: Cannot recover - status code and headers already sent
 	}
+}
+
+// contains checks if a comma-separated string contains a specific value
+func contains(s, substr string) bool {
+	parts := strings.Split(s, ",")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == substr {
+			return true
+		}
+	}
+	return false
 }

@@ -447,6 +447,13 @@ func (s *GoogleStore) DeleteGmailMessage(id string) error {
 	return err
 }
 
+func (s *GoogleStore) UpdateGmailMessageLabels(userID, messageID string, labelIDs []string) error {
+	// Convert slice to comma-separated string for database storage
+	labelIDsStr := strings.Join(labelIDs, ",")
+	_, err := s.db.Exec("UPDATE gmail_messages SET label_ids = ? WHERE id = ? AND user_id = ?", labelIDsStr, messageID, userID)
+	return err
+}
+
 func (s *GoogleStore) CreateGmailMessageFromForm(userID, from, subject, body string, labels []string) (*GmailMessageView, error) {
 	id := fmt.Sprintf("msg_%d", time.Now().UnixNano())
 	threadID := fmt.Sprintf("thr_%d", time.Now().UnixNano())

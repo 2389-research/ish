@@ -18,8 +18,10 @@ func (p *GooglePlugin) registerPeopleRoutes(r chi.Router) {
 	r.Get("/v1/people/me/connections", p.listConnections)
 	r.Get("/v1/people/{resourceId}", p.getPerson)
 	r.Get("/v1/people:searchContacts", p.searchContacts)
+	r.Post("/v1/people:createContact", p.createContact)
 	r.Get("/people/v1/people:searchContacts", p.searchContacts)
 	r.Get("/people/v1/people/{resourceId}", p.getPerson)
+	r.Post("/people/v1/people:createContact", p.createContact)
 }
 
 func (p *GooglePlugin) listConnections(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +170,60 @@ func (p *GooglePlugin) getPerson(w http.ResponseWriter, r *http.Request) {
 	// Merge data fields
 	for k, v := range data {
 		resp[k] = v
+	}
+
+	writeJSON(w, resp)
+}
+
+func (p *GooglePlugin) createContact(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
+	userID := auth.UserFromContext(r.Context())
+
+	// Parse request body
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "Invalid request body", "INVALID_ARGUMENT")
+		return
+	}
+
+	// Extract name and email from the request
+	var name, email string
+	if names, ok := req["names"].([]any); ok && len(names) > 0 {
+		if nameObj, ok := names[0].(map[string]any); ok {
+			if displayName, ok := nameObj["displayName"].(string); ok {
+				name = displayName
+			}
+		}
+	}
+	if emailAddresses, ok := req["emailAddresses"].([]any); ok && len(emailAddresses) > 0 {
+		if emailObj, ok := emailAddresses[0].(map[string]any); ok {
+			if value, ok := emailObj["value"].(string); ok {
+				email = value
+			}
+		}
+	}
+
+	// Create the contact
+	person, err := p.store.CreatePersonFromForm(userID, name, email)
+	if err != nil {
+		writeError(w, 500, "Failed to create contact", "INTERNAL")
+		return
+	}
+
+	// Return the created contact
+	w.WriteHeader(http.StatusCreated)
+	resp := map[string]any{
+		"resourceName": person.ResourceName,
+		"names": []map[string]string{
+			{"displayName": person.DisplayName},
+		},
+		"emailAddresses": []map[string]string{
+			{"value": person.Email},
+		},
 	}
 
 	writeJSON(w, resp)
