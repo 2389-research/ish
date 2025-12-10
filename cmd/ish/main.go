@@ -39,7 +39,30 @@ var (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "ish",
-		Short: "Fake Google API server",
+		Short: "ISH - Intelligent Server Hub: Mock API server for testing",
+		Long: `ISH (Intelligent Server Hub) is a comprehensive mock API server for development and testing.
+
+Supports 7+ popular APIs including:
+  • Google (Gmail, Calendar, People, Tasks)
+  • GitHub (repos, issues, PRs, webhooks)
+  • Twilio (SMS, calls)
+  • Discord (webhooks)
+  • SendGrid (email)
+  • Home Assistant (smart home)
+  • OAuth 2.0 (authorization flows)
+
+Features:
+  • AI-powered realistic test data generation
+  • Google API Discovery Service support
+  • SQLite persistence for stateful testing
+  • Auto-generated admin UI
+  • Full query/filtering support
+  • 99+ API endpoints
+
+Quick Start:
+  ish seed          # Generate test data
+  ish serve         # Start server on port 9000
+  ish reset         # Wipe and reseed database`,
 	}
 
 	// Calculate default database path once (not per-command)
@@ -48,24 +71,78 @@ func main() {
 	serveCmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server",
-		RunE:  runServe,
+		Long: `Start the ISH HTTP server on the specified port.
+
+The server provides:
+  • All API endpoints for supported plugins
+  • Admin UI at http://localhost:PORT/admin
+  • Health check at http://localhost:PORT/healthz
+  • Google API Discovery Service
+
+Authentication:
+  Use Bearer tokens in the format: Bearer user:USERNAME
+  Example: curl -H "Authorization: Bearer user:me" http://localhost:9000/gmail/v1/users/me/messages
+
+Environment Variables:
+  ISH_PORT          Server port (default: 9000)
+  OPENAI_API_KEY    Enable AI-powered features
+  ISH_AUTO_REPLY    Enable auto-reply (true/false)`,
+		RunE: runServe,
 	}
 	serveCmd.Flags().StringVarP(&port, "port", "p", getEnv("ISH_PORT", "9000"), "Port to listen on")
 	serveCmd.Flags().StringVarP(&dbPath, "db", "d", defaultDBPath, "Database path")
 
 	seedCmd := &cobra.Command{
 		Use:   "seed [plugin]",
-		Short: "Seed the database with test data (optionally for a specific plugin)",
-		Long:  "Seed the database with test data. If no plugin is specified, seeds all plugins. Use 'seed <plugin-name>' to seed only a specific plugin.",
-		RunE:  runSeed,
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Seed the database with test data",
+		Long: `Seed the database with realistic test data for all plugins or a specific one.
+
+AI-Powered Generation:
+  Set OPENAI_API_KEY to use AI for generating realistic emails, events, and contacts.
+  Falls back to static test data if no API key is provided.
+
+Usage:
+  ish seed              # Seed all plugins with test data
+  ish seed google       # Seed only Google plugin
+  ish seed github       # Seed only GitHub plugin
+
+Available Plugins:
+  google, github, twilio, discord, sendgrid, homeassistant, oauth
+
+Data Generated:
+  • Gmail: 8 messages, threads, labels
+  • Calendar: 5 events with realistic times
+  • People: 5 contacts with names and emails
+  • Tasks: 5 tasks in multiple lists
+  • GitHub: Users, repos, issues, PRs, comments
+  • Twilio: Phone numbers, SMS messages, calls
+  • SendGrid: Email accounts, API keys, messages
+  • Home Assistant: Devices, entities, states
+
+Note: Seed is not idempotent. Use 'ish reset' to clear data before reseeding.`,
+		RunE: runSeed,
+		Args: cobra.MaximumNArgs(1),
 	}
 	seedCmd.Flags().StringVarP(&dbPath, "db", "d", defaultDBPath, "Database path")
 
 	resetCmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Reset the database (wipe and reseed)",
-		RunE:  runReset,
+		Long: `Delete the database file and create a fresh one with new test data.
+
+This command:
+  1. Deletes the existing database file
+  2. Creates a new empty database
+  3. Seeds it with fresh test data for all plugins
+
+Use this when:
+  • You need to start fresh with clean data
+  • Seed data has become inconsistent
+  • You want to regenerate AI-powered data with different results
+  • You accidentally corrupted the database
+
+Warning: This permanently deletes all data in the database!`,
+		RunE: runReset,
 	}
 	resetCmd.Flags().StringVarP(&dbPath, "db", "d", defaultDBPath, "Database path")
 
