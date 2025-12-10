@@ -448,9 +448,12 @@ func (s *GoogleStore) DeleteGmailMessage(id string) error {
 }
 
 func (s *GoogleStore) UpdateGmailMessageLabels(userID, messageID string, labelIDs []string) error {
-	// Convert slice to comma-separated string for database storage
-	labelIDsStr := strings.Join(labelIDs, ",")
-	_, err := s.db.Exec("UPDATE gmail_messages SET label_ids = ? WHERE id = ? AND user_id = ?", labelIDsStr, messageID, userID)
+	// Convert slice to JSON for database storage (consistent with other label storage)
+	labelJSON, err := json.Marshal(labelIDs)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("UPDATE gmail_messages SET label_ids = ? WHERE id = ? AND user_id = ?", string(labelJSON), messageID, userID)
 	return err
 }
 
