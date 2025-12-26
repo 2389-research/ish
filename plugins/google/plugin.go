@@ -39,7 +39,7 @@ func (p *GooglePlugin) RegisterRoutes(r chi.Router) {
 }
 
 func (p *GooglePlugin) RegisterAuth(r chi.Router) {
-	// OAuth endpoints will be added later
+	p.registerOAuthRoutes(r)
 }
 
 func (p *GooglePlugin) Schema() core.PluginSchema {

@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
@@ -18,6 +19,11 @@ type PluginHandlers struct{}
 
 // RegisterRoutes registers plugin admin routes
 func (h *PluginHandlers) RegisterRoutes(r chi.Router) {
+	// JSON API endpoints for agents to verify integrations
+	r.Get("/admin/plugins/{plugin}/{resource}.json", h.PluginListJSON)
+	r.Get("/admin/plugins/{plugin}/{resource}/{id}.json", h.PluginDetailJSON)
+
+	// HTML views
 	r.Route("/admin/plugins/{plugin}/{resource}", func(r chi.Router) {
 		r.Get("/", h.PluginListView)
 		r.Get("/new", h.PluginCreateForm)
@@ -243,6 +249,133 @@ func (h *PluginHandlers) PluginEditForm(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "text/html")
 	renderPage(w, "plugin-form", pageData)
+}
+
+// JSON API handlers for agents to verify integrations
+
+// PluginListJSON returns resource list as JSON for agents to verify integrations
+func (h *PluginHandlers) PluginListJSON(w http.ResponseWriter, r *http.Request) {
+	pluginName := chi.URLParam(r, "plugin")
+	resourceSlug := chi.URLParam(r, "resource")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get plugin from registry
+	plugin, ok := core.Get(pluginName)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":  "Plugin not found",
+			"plugin": pluginName,
+		})
+		return
+	}
+
+	// Get schema
+	schema := plugin.Schema()
+
+	// Find resource schema
+	resourceSchema := findResourceSchema(schema, resourceSlug)
+	if resourceSchema == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":    "Resource not found",
+			"plugin":   pluginName,
+			"resource": resourceSlug,
+		})
+		return
+	}
+
+	// Check if plugin supports data fetching
+	var resources []map[string]interface{}
+	if dataProvider, ok := plugin.(core.DataProvider); ok {
+		opts := core.ListOptions{Limit: 50, Offset: 0}
+		fetchedResources, err := dataProvider.ListResources(r.Context(), resourceSlug, opts)
+		if err != nil {
+			log.Printf("Error fetching %s data from %s: %v", resourceSlug, pluginName, err)
+			resources = []map[string]interface{}{}
+		} else {
+			resources = fetchedResources
+		}
+	} else {
+		resources = []map[string]interface{}{}
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"plugin":   pluginName,
+		"resource": resourceSlug,
+		"count":    len(resources),
+		"data":     resources,
+	})
+}
+
+// PluginDetailJSON returns a single resource as JSON for agents to verify integrations
+func (h *PluginHandlers) PluginDetailJSON(w http.ResponseWriter, r *http.Request) {
+	pluginName := chi.URLParam(r, "plugin")
+	resourceSlug := chi.URLParam(r, "resource")
+	id := chi.URLParam(r, "id")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get plugin from registry
+	plugin, ok := core.Get(pluginName)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":  "Plugin not found",
+			"plugin": pluginName,
+		})
+		return
+	}
+
+	// Get schema
+	schema := plugin.Schema()
+
+	// Find resource schema
+	resourceSchema := findResourceSchema(schema, resourceSlug)
+	if resourceSchema == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":    "Resource not found",
+			"plugin":   pluginName,
+			"resource": resourceSlug,
+		})
+		return
+	}
+
+	// Check if plugin supports data fetching
+	var data map[string]interface{}
+	if dataProvider, ok := plugin.(core.DataProvider); ok {
+		fetchedData, err := dataProvider.GetResource(context.Background(), resourceSlug, id)
+		if err != nil {
+			log.Printf("Error fetching %s/%s from %s: %v", resourceSlug, id, pluginName, err)
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error":    "Resource item not found",
+				"plugin":   pluginName,
+				"resource": resourceSlug,
+				"id":       id,
+			})
+			return
+		}
+		data = fetchedData
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":    "Plugin does not support data fetching",
+			"plugin":   pluginName,
+			"resource": resourceSlug,
+			"id":       id,
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"plugin":   pluginName,
+		"resource": resourceSlug,
+		"id":       id,
+		"data":     data,
+	})
 }
 
 // Helper functions

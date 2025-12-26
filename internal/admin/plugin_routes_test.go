@@ -30,6 +30,23 @@ func (m *mockPlugin) Seed(ctx context.Context, size string) (core.SeedData, erro
 }
 func (m *mockPlugin) ValidateToken(token string) bool { return true }
 
+// DataProvider implementation for JSON endpoint tests
+func (m *mockPlugin) ListResources(ctx context.Context, slug string, opts core.ListOptions) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{"id": "1", "subject": "Test Message 1", "from": "test1@example.com"},
+		{"id": "2", "subject": "Test Message 2", "from": "test2@example.com"},
+	}, nil
+}
+
+func (m *mockPlugin) GetResource(ctx context.Context, slug, id string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"id":      id,
+		"subject": "Test Message",
+		"from":    "test@example.com",
+		"body":    "Test body content",
+	}, nil
+}
+
 var testPluginRegistered = false
 
 func setupTestPlugin() {
@@ -223,5 +240,126 @@ func TestURLParameterParsing(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Error("Failed to parse URL parameters correctly")
+	}
+}
+
+// JSON endpoint tests - for agents to verify integration worked
+
+func TestPluginListJSON(t *testing.T) {
+	setupTestPlugin()
+
+	h := &PluginHandlers{}
+	req := httptest.NewRequest("GET", "/admin/plugins/testplugin/messages.json", nil)
+	w := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("plugin", "testplugin")
+	rctx.URLParams.Add("resource", "messages")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.PluginListJSON(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"plugin"`) {
+		t.Error("Expected JSON response to contain 'plugin' key")
+	}
+	if !strings.Contains(body, `"resource"`) {
+		t.Error("Expected JSON response to contain 'resource' key")
+	}
+	if !strings.Contains(body, `"data"`) {
+		t.Error("Expected JSON response to contain 'data' key")
+	}
+}
+
+func TestPluginDetailJSON(t *testing.T) {
+	setupTestPlugin()
+
+	h := &PluginHandlers{}
+	req := httptest.NewRequest("GET", "/admin/plugins/testplugin/messages/123.json", nil)
+	w := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("plugin", "testplugin")
+	rctx.URLParams.Add("resource", "messages")
+	rctx.URLParams.Add("id", "123")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.PluginDetailJSON(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"plugin"`) {
+		t.Error("Expected JSON response to contain 'plugin' key")
+	}
+	if !strings.Contains(body, `"resource"`) {
+		t.Error("Expected JSON response to contain 'resource' key")
+	}
+	if !strings.Contains(body, `"data"`) {
+		t.Error("Expected JSON response to contain 'data' key")
+	}
+	if !strings.Contains(body, `"id"`) {
+		t.Error("Expected JSON response to contain 'id' key")
+	}
+}
+
+func TestPluginListJSONNotFound(t *testing.T) {
+	h := &PluginHandlers{}
+	req := httptest.NewRequest("GET", "/admin/plugins/nonexistent/messages.json", nil)
+	w := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("plugin", "nonexistent")
+	rctx.URLParams.Add("resource", "messages")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.PluginListJSON(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404 for nonexistent plugin, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json even for errors, got %s", contentType)
+	}
+}
+
+func TestPluginDetailJSONNotFound(t *testing.T) {
+	h := &PluginHandlers{}
+	req := httptest.NewRequest("GET", "/admin/plugins/nonexistent/messages/123.json", nil)
+	w := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("plugin", "nonexistent")
+	rctx.URLParams.Add("resource", "messages")
+	rctx.URLParams.Add("id", "123")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.PluginDetailJSON(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404 for nonexistent plugin, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json even for errors, got %s", contentType)
 	}
 }
