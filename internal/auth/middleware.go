@@ -47,5 +47,11 @@ func extractUser(authHeader string) string {
 		return strings.TrimPrefix(token, "user:")
 	}
 
+	// Handle ish-mock tokens - use consistent user ID for all mock tokens
+	// This ensures data persists across token refreshes
+	if strings.HasPrefix(token, "ish-mock-") {
+		return "eval-user@example.com"
+	}
+
 	return token
 }

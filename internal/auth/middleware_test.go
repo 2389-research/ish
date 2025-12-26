@@ -19,6 +19,10 @@ func TestMiddleware_ExtractsUser(t *testing.T) {
 		{"simple token", "Bearer harper", "harper"},
 		{"no header", "", "default"},
 		{"empty bearer", "Bearer ", "default"},
+		// ish-mock tokens should all map to the same user for data persistence
+		{"ish-mock access token", "Bearer ish-mock-access-12345", "eval-user@example.com"},
+		{"ish-mock refresh token", "Bearer ish-mock-refresh-12345", "eval-user@example.com"},
+		{"ish-mock different timestamp", "Bearer ish-mock-access-67890", "eval-user@example.com"},
 	}
 
 	for _, tt := range tests {
