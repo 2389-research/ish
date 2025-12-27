@@ -44,7 +44,7 @@ func (p *GooglePlugin) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
@@ -90,11 +90,11 @@ func (p *GooglePlugin) getMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
-	messageID := chi.URLParam(r, "messageId")
+	messageID := urlParam(r, "messageId")
 
 	msg, err := p.store.GetGmailMessage(userID, messageID)
 	if err != nil {
@@ -127,11 +127,11 @@ func (p *GooglePlugin) deleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
-	messageID := chi.URLParam(r, "messageId")
+	messageID := urlParam(r, "messageId")
 
 	// Delete the message (includes user ownership check)
 	if err := p.store.DeleteGmailMessage(userID, messageID); err != nil {
@@ -153,11 +153,11 @@ func (p *GooglePlugin) trashMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
-	messageID := chi.URLParam(r, "messageId")
+	messageID := urlParam(r, "messageId")
 
 	// Get the message
 	msg, err := p.store.GetGmailMessage(userID, messageID)
@@ -215,7 +215,7 @@ func (p *GooglePlugin) getProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
@@ -242,12 +242,12 @@ func (p *GooglePlugin) getAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
-	messageID := chi.URLParam(r, "messageId")
-	attachmentID := chi.URLParam(r, "attachmentId")
+	messageID := urlParam(r, "messageId")
+	attachmentID := urlParam(r, "attachmentId")
 
 	attachment, err := p.store.GetGmailAttachment(userID, messageID, attachmentID)
 	if err != nil {
@@ -270,7 +270,7 @@ func (p *GooglePlugin) listHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}
@@ -332,7 +332,7 @@ func (p *GooglePlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userId")
+	userID := urlParam(r, "userId")
 	if userID == "me" {
 		userID = auth.UserFromContext(r.Context())
 	}

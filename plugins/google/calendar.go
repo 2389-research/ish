@@ -40,7 +40,7 @@ func (p *GooglePlugin) listEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calendarID := chi.URLParam(r, "calendarId")
+	calendarID := urlParam(r, "calendarId")
 
 	maxResults := 250
 	if mr := r.URL.Query().Get("maxResults"); mr != "" {
@@ -138,8 +138,8 @@ func (p *GooglePlugin) getEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calendarID := chi.URLParam(r, "calendarId")
-	eventID := chi.URLParam(r, "eventId")
+	calendarID := urlParam(r, "calendarId")
+	eventID := urlParam(r, "eventId")
 
 	evt, err := p.store.GetCalendarEvent(calendarID, eventID)
 	if err != nil {
@@ -189,7 +189,7 @@ func (p *GooglePlugin) getEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *GooglePlugin) createEvent(w http.ResponseWriter, r *http.Request) {
-	calendarID := chi.URLParam(r, "calendarId")
+	calendarID := urlParam(r, "calendarId")
 
 	var req struct {
 		Summary     string `json:"summary"`
@@ -295,8 +295,8 @@ func (p *GooglePlugin) updateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calendarID := chi.URLParam(r, "calendarId")
-	eventID := chi.URLParam(r, "eventId")
+	calendarID := urlParam(r, "calendarId")
+	eventID := urlParam(r, "eventId")
 
 	// First get the existing event
 	existing, err := p.store.GetCalendarEvent(calendarID, eventID)
@@ -406,8 +406,8 @@ func (p *GooglePlugin) deleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calendarID := chi.URLParam(r, "calendarId")
-	eventID := chi.URLParam(r, "eventId")
+	calendarID := urlParam(r, "calendarId")
+	eventID := urlParam(r, "eventId")
 
 	err := p.store.DeleteCalendarEvent(calendarID, eventID)
 	if err != nil {

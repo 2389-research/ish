@@ -42,16 +42,14 @@ func extractUser(authHeader string) string {
 		return "default"
 	}
 
-	// Check for "user:" prefix
+	// Check for "user:" prefix - allows explicit user specification
 	if strings.HasPrefix(token, "user:") {
 		return strings.TrimPrefix(token, "user:")
 	}
 
-	// Handle ish-mock tokens - use consistent user ID for all mock tokens
-	// This ensures data persists across token refreshes
-	if strings.HasPrefix(token, "ish-mock-") {
-		return "eval-user@example.com"
-	}
-
-	return token
+	// For mock server: ALL tokens map to the same user for data persistence.
+	// This ensures that regardless of what token format clients use (ish-mock-*,
+	// ya29.*, or any other format), data is accessible across requests.
+	// This is intentional for testing - in production, you'd validate tokens properly.
+	return "eval-user@example.com"
 }

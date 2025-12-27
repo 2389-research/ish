@@ -6,11 +6,23 @@ package google
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 )
+
+// urlParam extracts a URL path parameter and decodes it.
+// This handles cases where clients send %40 instead of @ in paths.
+func urlParam(r *http.Request, key string) string {
+	value := chi.URLParam(r, key)
+	decoded, err := url.PathUnescape(value)
+	if err != nil {
+		return value // Return original if decoding fails
+	}
+	return decoded
+}
 
 func (p *GooglePlugin) registerTasksRoutes(r chi.Router) {
 	r.Route("/tasks/v1", func(r chi.Router) {
@@ -48,7 +60,7 @@ func (p *GooglePlugin) listTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listID := chi.URLParam(r, "tasklist")
+	listID := urlParam(r, "tasklist")
 
 	showCompleted := true
 	if sc := r.URL.Query().Get("showCompleted"); sc == "false" {
@@ -106,7 +118,7 @@ func (p *GooglePlugin) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listID := chi.URLParam(r, "tasklist")
+	listID := urlParam(r, "tasklist")
 
 	var req struct {
 		Title string `json:"title"`
@@ -163,8 +175,8 @@ func (p *GooglePlugin) getTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listID := chi.URLParam(r, "tasklist")
-	taskID := chi.URLParam(r, "task")
+	listID := urlParam(r, "tasklist")
+	taskID := urlParam(r, "task")
 
 	task, err := p.store.GetTask(listID, taskID)
 	if err != nil {
@@ -199,8 +211,8 @@ func (p *GooglePlugin) updateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listID := chi.URLParam(r, "tasklist")
-	taskID := chi.URLParam(r, "task")
+	listID := urlParam(r, "tasklist")
+	taskID := urlParam(r, "task")
 
 	// Get existing task
 	existing, err := p.store.GetTask(listID, taskID)
@@ -274,8 +286,8 @@ func (p *GooglePlugin) deleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listID := chi.URLParam(r, "tasklist")
-	taskID := chi.URLParam(r, "task")
+	listID := urlParam(r, "tasklist")
+	taskID := urlParam(r, "task")
 
 	err := p.store.DeleteTask(listID, taskID)
 	if err != nil {

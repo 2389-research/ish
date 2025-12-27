@@ -15,8 +15,8 @@ func (p *GooglePlugin) registerDiscoveryRoutes(r chi.Router) {
 }
 
 func (p *GooglePlugin) getDiscoveryDoc(w http.ResponseWriter, r *http.Request) {
-	api := chi.URLParam(r, "api")
-	version := chi.URLParam(r, "version")
+	api := urlParam(r, "api")
+	version := urlParam(r, "version")
 
 	var doc interface{}
 	switch api {

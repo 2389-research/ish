@@ -349,6 +349,207 @@ func TestGmailPersistenceWithDifferentTokens(t *testing.T) {
 	}
 }
 
+// TestGmailWithAnyTokens verifies that ALL tokens map to the same user for mock server
+func TestGmailWithAnyTokens(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	// Step 1: Send with a Google-style access token (ya29.*)
+	rawEmail := "From: jeff@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nTest."
+	encodedEmail := base64.URLEncoding.EncodeToString([]byte(rawEmail))
+	messagePayload := `{"raw": "` + encodedEmail + `"}`
+
+	postReq := httptest.NewRequest("POST", "/gmail/v1/users/me/messages/send", strings.NewReader(messagePayload))
+	postReq.Header.Set("Content-Type", "application/json")
+	// Token that might come from Google OAuth (not ish-mock prefix)
+	postReq.Header.Set("Authorization", "Bearer ya29.a0AfH6SMC...")
+	postW := httptest.NewRecorder()
+
+	r.ServeHTTP(postW, postReq)
+
+	if postW.Code != http.StatusOK {
+		t.Fatalf("POST got status %d. Body: %s", postW.Code, postW.Body.String())
+	}
+
+	var sentMessage map[string]interface{}
+	json.NewDecoder(postW.Body).Decode(&sentMessage)
+	messageID := sentMessage["id"].(string)
+	t.Logf("Sent message with ID: %s using ya29 token", messageID)
+
+	// Step 2: List with a DIFFERENT token (any format) - should still find the message
+	getReq := httptest.NewRequest("GET", "/gmail/v1/users/me/messages", nil)
+	getReq.Header.Set("Authorization", "Bearer totally-different-token-format")
+	getW := httptest.NewRecorder()
+
+	r.ServeHTTP(getW, getReq)
+
+	var listResp map[string]interface{}
+	json.NewDecoder(getW.Body).Decode(&listResp)
+	messages, _ := listResp["messages"].([]interface{})
+
+	if len(messages) == 0 {
+		t.Fatalf("BUG: Different tokens should still find messages in mock server mode")
+	}
+
+	// Verify the message is found
+	found := false
+	for _, item := range messages {
+		msg := item.(map[string]interface{})
+		if msg["id"] == messageID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("message %s not found with different token format", messageID)
+	}
+}
+
+// TestGmailWithRandomMockTokens simulates the Docker scenario where different
+// random ish-mock tokens are used for POST and GET
+func TestGmailWithRandomMockTokens(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	// Step 1: Send a message with a random ish-mock token (simulating jeff)
+	rawEmail := "From: jeff@example.com\r\nTo: recipient@example.com\r\nSubject: Docker Test\r\n\r\nTest from Docker."
+	encodedEmail := base64.URLEncoding.EncodeToString([]byte(rawEmail))
+	messagePayload := `{"raw": "` + encodedEmail + `"}`
+
+	postReq := httptest.NewRequest("POST", "/gmail/v1/users/me/messages/send", strings.NewReader(messagePayload))
+	postReq.Header.Set("Content-Type", "application/json")
+	// Token like what OAuth mock generates
+	postReq.Header.Set("Authorization", "Bearer ish-mock-access-abc123def456")
+	postW := httptest.NewRecorder()
+
+	r.ServeHTTP(postW, postReq)
+
+	if postW.Code != http.StatusOK {
+		t.Fatalf("POST message got status %d, want %d. Body: %s", postW.Code, http.StatusOK, postW.Body.String())
+	}
+
+	var sentMessage map[string]interface{}
+	if err := json.NewDecoder(postW.Body).Decode(&sentMessage); err != nil {
+		t.Fatalf("failed to decode POST response: %v", err)
+	}
+
+	messageID := sentMessage["id"].(string)
+	t.Logf("jeff sent message with ID: %s", messageID)
+
+	// Step 2: List messages with a DIFFERENT random ish-mock token (simulating eval harness)
+	getReq := httptest.NewRequest("GET", "/gmail/v1/users/me/messages", nil)
+	// Different random token, simulating eval harness
+	getReq.Header.Set("Authorization", "Bearer ish-mock-access-xyz789uvw321")
+	getW := httptest.NewRecorder()
+
+	r.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET messages got status %d, want %d. Body: %s", getW.Code, http.StatusOK, getW.Body.String())
+	}
+
+	var listResp map[string]interface{}
+	if err := json.NewDecoder(getW.Body).Decode(&listResp); err != nil {
+		t.Fatalf("failed to decode GET response: %v", err)
+	}
+
+	messages, ok := listResp["messages"].([]interface{})
+	if !ok {
+		t.Fatalf("GET response missing messages array")
+	}
+
+	if len(messages) == 0 {
+		t.Fatalf("BUG: Different ish-mock tokens returned empty messages. Both should map to same user!")
+	}
+
+	// Verify the message is found
+	found := false
+	for _, item := range messages {
+		msg := item.(map[string]interface{})
+		if msg["id"] == messageID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("message %s not found with different ish-mock token", messageID)
+	}
+}
+
+// TestTasksURLEncodingPersistence verifies that @default and %40default work the same
+func TestTasksURLEncodingPersistence(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	// Step 1: Create a task using @default (unencoded)
+	taskPayload := `{"title": "URL Encoding Test Task"}`
+	postReq := httptest.NewRequest("POST", "/tasks/v1/lists/@default/tasks", strings.NewReader(taskPayload))
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("Authorization", "Bearer test-token")
+	postW := httptest.NewRecorder()
+
+	r.ServeHTTP(postW, postReq)
+
+	if postW.Code != http.StatusCreated {
+		t.Fatalf("POST task got status %d, want %d. Body: %s", postW.Code, http.StatusCreated, postW.Body.String())
+	}
+
+	var createdTask map[string]interface{}
+	if err := json.NewDecoder(postW.Body).Decode(&createdTask); err != nil {
+		t.Fatalf("failed to decode POST response: %v", err)
+	}
+
+	taskID := createdTask["id"].(string)
+	t.Logf("Created task with ID: %s using @default", taskID)
+
+	// Step 2: List tasks using %40default (URL-encoded @)
+	getReq := httptest.NewRequest("GET", "/tasks/v1/lists/%40default/tasks", nil)
+	getReq.Header.Set("Authorization", "Bearer test-token")
+	getW := httptest.NewRecorder()
+
+	r.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET tasks got status %d, want %d. Body: %s", getW.Code, http.StatusOK, getW.Body.String())
+	}
+
+	var listResp map[string]interface{}
+	if err := json.NewDecoder(getW.Body).Decode(&listResp); err != nil {
+		t.Fatalf("failed to decode GET response: %v", err)
+	}
+
+	items, ok := listResp["items"].([]interface{})
+	if !ok {
+		t.Fatalf("GET response missing items array")
+	}
+
+	if len(items) == 0 {
+		t.Fatalf("BUG: GET with %%40default returned empty when task was created with @default. URL encoding not normalized!")
+	}
+
+	// Verify the task is found
+	found := false
+	for _, item := range items {
+		task := item.(map[string]interface{})
+		if task["id"] == taskID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("task %s not found when querying with %%40default", taskID)
+	}
+}
+
 func TestCalendarPersistence(t *testing.T) {
 	// Calendar should work - this test confirms our baseline
 	p := setupTestPlugin(t)

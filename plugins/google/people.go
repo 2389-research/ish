@@ -148,7 +148,7 @@ func (p *GooglePlugin) getPerson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := auth.UserFromContext(r.Context())
-	resourceID := chi.URLParam(r, "resourceId")
+	resourceID := urlParam(r, "resourceId")
 	resourceName := "people/" + resourceID
 
 	// Handle full resource name format
