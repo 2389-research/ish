@@ -1105,10 +1105,62 @@ func (s *GoogleStore) CreatePersonFromForm(userID, name, email string) (*PersonV
 	}, nil
 }
 
-func (s *GoogleStore) DeletePerson(id string) error {
-	resourceName := "people/" + id
-	_, err := s.db.Exec("DELETE FROM people WHERE resource_name = ?", resourceName)
-	return err
+func (s *GoogleStore) DeletePerson(userID, resourceName string) error {
+	result, err := s.db.Exec("DELETE FROM people WHERE resource_name = ? AND user_id = ?", resourceName, userID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("person not found")
+	}
+	return nil
+}
+
+func (s *GoogleStore) UpdatePerson(userID, resourceName string, data map[string]any) (*Person, error) {
+	// Check if person exists and belongs to user
+	var existing Person
+	err := s.db.QueryRow("SELECT resource_name, user_id, data FROM people WHERE resource_name = ? AND user_id = ?",
+		resourceName, userID).Scan(&existing.ResourceName, &existing.UserID, &existing.Data)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("person not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Merge existing data with updates
+	var existingData map[string]any
+	if err := json.Unmarshal([]byte(existing.Data), &existingData); err != nil {
+		existingData = make(map[string]any)
+	}
+
+	// Apply updates
+	for k, v := range data {
+		existingData[k] = v
+	}
+
+	// Serialize updated data
+	dataJSON, err := json.Marshal(existingData)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update in database
+	_, err = s.db.Exec("UPDATE people SET data = ?, updated_at = ? WHERE resource_name = ? AND user_id = ?",
+		string(dataJSON), time.Now().Format(time.RFC3339), resourceName, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Person{
+		ResourceName: resourceName,
+		UserID:       userID,
+		Data:         string(dataJSON),
+	}, nil
 }
 
 // GetPeopleSyncToken returns the current sync token for a user's contacts.

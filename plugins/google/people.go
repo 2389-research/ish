@@ -20,6 +20,8 @@ func (p *GooglePlugin) registerPeopleRoutes(r chi.Router) {
 	registerPeopleV1Routes := func(r chi.Router) {
 		r.Get("/people/me/connections", p.listConnections)
 		r.Get("/people/{resourceId}", p.getPerson)
+		r.Patch("/people/{resourceId}:updateContact", p.updateContact)
+		r.Delete("/people/{resourceId}:deleteContact", p.deleteContact)
 		r.Get("/people:searchContacts", p.searchContacts)
 		r.Post("/people:createContact", p.createContact)
 	}
@@ -237,4 +239,85 @@ func (p *GooglePlugin) createContact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
+}
+
+func (p *GooglePlugin) updateContact(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
+	userID := auth.UserFromContext(r.Context())
+	resourceID := urlParam(r, "resourceId")
+	resourceName := "people/" + resourceID
+
+	// Handle full resource name format
+	if strings.HasPrefix(resourceID, "people/") {
+		resourceName = resourceID
+	}
+
+	// Parse request body
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "Invalid request body", "INVALID_ARGUMENT")
+		return
+	}
+
+	// Update the contact
+	person, err := p.store.UpdatePerson(userID, resourceName, req)
+	if err != nil {
+		if err.Error() == "person not found" {
+			writeError(w, 404, "Contact not found", "NOT_FOUND")
+		} else {
+			writeError(w, 500, "Failed to update contact", "INTERNAL")
+		}
+		return
+	}
+
+	// Parse the updated data for response
+	var data map[string]any
+	if err := json.Unmarshal([]byte(person.Data), &data); err != nil {
+		log.Printf("Failed to unmarshal person data: %v", err)
+		data = map[string]any{}
+	}
+
+	resp := map[string]any{
+		"resourceName": person.ResourceName,
+	}
+	// Merge data fields
+	for k, v := range data {
+		resp[k] = v
+	}
+
+	writeJSON(w, resp)
+}
+
+func (p *GooglePlugin) deleteContact(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, 500, "Plugin not initialized", "INTERNAL")
+		return
+	}
+
+	userID := auth.UserFromContext(r.Context())
+	resourceID := urlParam(r, "resourceId")
+	resourceName := "people/" + resourceID
+
+	// Handle full resource name format
+	if strings.HasPrefix(resourceID, "people/") {
+		resourceName = resourceID
+	}
+
+	// Delete the contact
+	err := p.store.DeletePerson(userID, resourceName)
+	if err != nil {
+		if err.Error() == "person not found" {
+			writeError(w, 404, "Contact not found", "NOT_FOUND")
+		} else {
+			writeError(w, 500, "Failed to delete contact", "INTERNAL")
+		}
+		return
+	}
+
+	// Return 204 No Content on success
+	w.WriteHeader(http.StatusNoContent)
 }

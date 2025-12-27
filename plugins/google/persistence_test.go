@@ -631,3 +631,124 @@ func TestCalendarPersistence(t *testing.T) {
 		t.Errorf("created event %s not found in GET response. Items: %v", eventID, items)
 	}
 }
+
+// TestContactsCRUD tests the full create/read/update/delete lifecycle for contacts
+func TestContactsCRUD(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	// Step 1: Create a contact
+	createBody := `{
+		"names": [{"displayName": "John Doe"}],
+		"emailAddresses": [{"value": "john@example.com"}]
+	}`
+	createReq := httptest.NewRequest("POST", "/v1/people:createContact", strings.NewReader(createBody))
+	createReq.Header.Set("Authorization", "Bearer test-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+
+	r.ServeHTTP(createW, createReq)
+
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("POST create contact got status %d, want %d. Body: %s", createW.Code, http.StatusCreated, createW.Body.String())
+	}
+
+	var createdContact map[string]interface{}
+	if err := json.NewDecoder(createW.Body).Decode(&createdContact); err != nil {
+		t.Fatalf("failed to decode POST response: %v", err)
+	}
+
+	resourceName, ok := createdContact["resourceName"].(string)
+	if !ok || resourceName == "" {
+		t.Fatalf("POST response missing resourceName")
+	}
+	t.Logf("Created contact with resourceName: %s", resourceName)
+
+	// Extract the resource ID from resourceName (e.g., "people/c123" -> "c123")
+	resourceID := strings.TrimPrefix(resourceName, "people/")
+
+	// Step 2: Get the contact to verify it was created
+	getReq := httptest.NewRequest("GET", "/v1/people/"+resourceID, nil)
+	getReq.Header.Set("Authorization", "Bearer test-token")
+	getW := httptest.NewRecorder()
+
+	r.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET contact got status %d, want %d. Body: %s", getW.Code, http.StatusOK, getW.Body.String())
+	}
+
+	// Step 3: Update the contact
+	updateBody := `{
+		"names": [{"displayName": "Jane Doe"}],
+		"emailAddresses": [{"value": "jane@example.com"}]
+	}`
+	updateReq := httptest.NewRequest("PATCH", "/v1/people/"+resourceID+":updateContact", strings.NewReader(updateBody))
+	updateReq.Header.Set("Authorization", "Bearer test-token")
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateW := httptest.NewRecorder()
+
+	r.ServeHTTP(updateW, updateReq)
+
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("PATCH update contact got status %d, want %d. Body: %s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+
+	var updatedContact map[string]interface{}
+	if err := json.NewDecoder(updateW.Body).Decode(&updatedContact); err != nil {
+		t.Fatalf("failed to decode PATCH response: %v", err)
+	}
+
+	// Verify the update was applied
+	if names, ok := updatedContact["names"].([]interface{}); ok && len(names) > 0 {
+		if nameObj, ok := names[0].(map[string]interface{}); ok {
+			if nameObj["displayName"] != "Jane Doe" {
+				t.Errorf("updated contact has wrong name: got %v, want 'Jane Doe'", nameObj["displayName"])
+			}
+		}
+	}
+	t.Logf("Updated contact successfully")
+
+	// Step 4: Delete the contact
+	deleteReq := httptest.NewRequest("DELETE", "/v1/people/"+resourceID+":deleteContact", nil)
+	deleteReq.Header.Set("Authorization", "Bearer test-token")
+	deleteW := httptest.NewRecorder()
+
+	r.ServeHTTP(deleteW, deleteReq)
+
+	if deleteW.Code != http.StatusNoContent {
+		t.Fatalf("DELETE contact got status %d, want %d. Body: %s", deleteW.Code, http.StatusNoContent, deleteW.Body.String())
+	}
+	t.Logf("Deleted contact successfully")
+
+	// Step 5: Verify the contact is gone
+	verifyReq := httptest.NewRequest("GET", "/v1/people/"+resourceID, nil)
+	verifyReq.Header.Set("Authorization", "Bearer test-token")
+	verifyW := httptest.NewRecorder()
+
+	r.ServeHTTP(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusNotFound {
+		t.Errorf("GET deleted contact got status %d, want %d (NOT_FOUND)", verifyW.Code, http.StatusNotFound)
+	}
+}
+
+// TestContactsDeleteNotFound tests that deleting a non-existent contact returns 404
+func TestContactsDeleteNotFound(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	deleteReq := httptest.NewRequest("DELETE", "/v1/people/nonexistent123:deleteContact", nil)
+	deleteReq.Header.Set("Authorization", "Bearer test-token")
+	deleteW := httptest.NewRecorder()
+
+	r.ServeHTTP(deleteW, deleteReq)
+
+	if deleteW.Code != http.StatusNotFound {
+		t.Errorf("DELETE non-existent contact got status %d, want %d", deleteW.Code, http.StatusNotFound)
+	}
+}

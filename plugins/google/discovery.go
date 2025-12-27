@@ -357,6 +357,32 @@ func getPeopleDiscoveryDoc(r *http.Request) map[string]interface{} {
 						"httpMethod":  "POST",
 						"description": "Create a new contact",
 					},
+					"updateContact": map[string]interface{}{
+						"id":          "people.people.updateContact",
+						"path":        "people/{resourceName}:updateContact",
+						"httpMethod":  "PATCH",
+						"description": "Update an existing contact",
+						"parameters": map[string]interface{}{
+							"resourceName": map[string]interface{}{
+								"type":     "string",
+								"required": true,
+								"location": "path",
+							},
+						},
+					},
+					"deleteContact": map[string]interface{}{
+						"id":          "people.people.deleteContact",
+						"path":        "people/{resourceName}:deleteContact",
+						"httpMethod":  "DELETE",
+						"description": "Delete a contact",
+						"parameters": map[string]interface{}{
+							"resourceName": map[string]interface{}{
+								"type":     "string",
+								"required": true,
+								"location": "path",
+							},
+						},
+					},
 				},
 			},
 			"people.connections": map[string]interface{}{
