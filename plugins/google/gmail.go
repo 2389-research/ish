@@ -49,6 +49,10 @@ func (p *GooglePlugin) listMessages(w http.ResponseWriter, r *http.Request) {
 		userID = auth.UserFromContext(r.Context())
 	}
 
+	// Debug logging for persistence investigation
+	log.Printf("[DEBUG] Gmail list: userID=%q, authHeader=%q, remoteAddr=%s",
+		userID, r.Header.Get("Authorization"), r.RemoteAddr)
+
 	maxResults := 100
 	if mr := r.URL.Query().Get("maxResults"); mr != "" {
 		if v, err := strconv.Atoi(mr); err == nil && v > 0 {
@@ -63,6 +67,8 @@ func (p *GooglePlugin) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "Internal error", "INTERNAL")
 		return
 	}
+
+	log.Printf("[DEBUG] Gmail list result: userID=%q, count=%d", userID, len(messages))
 
 	// Convert to response format
 	msgList := make([]map[string]any, len(messages))
@@ -337,6 +343,10 @@ func (p *GooglePlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 		userID = auth.UserFromContext(r.Context())
 	}
 
+	// Debug logging for persistence investigation
+	log.Printf("[DEBUG] Gmail send: userID=%q, authHeader=%q, remoteAddr=%s",
+		userID, r.Header.Get("Authorization"), r.RemoteAddr)
+
 	var req struct {
 		Raw string `json:"raw"`
 	}
@@ -372,6 +382,8 @@ func (p *GooglePlugin) sendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "Failed to send message", "INTERNAL")
 		return
 	}
+
+	log.Printf("[DEBUG] Gmail send stored: msgID=%s, userID=%q", msg.ID, userID)
 
 	// Trigger auto-reply (runs in background)
 	autoReply := autoreply.New(&googleStoreAdapter{store: p.store})
