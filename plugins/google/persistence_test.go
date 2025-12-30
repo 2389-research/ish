@@ -4,6 +4,7 @@
 package google
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -751,4 +752,152 @@ func TestContactsDeleteNotFound(t *testing.T) {
 	if deleteW.Code != http.StatusNotFound {
 		t.Errorf("DELETE non-existent contact got status %d, want %d", deleteW.Code, http.StatusNotFound)
 	}
+}
+
+// TestResetClearsAllData tests that Reset() clears all data from the Google plugin
+func TestResetClearsAllData(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	// Step 1: Create data - a task, a message, an event, and a contact
+	taskPayload := `{"title": "Test Task for Reset"}`
+	taskReq := httptest.NewRequest("POST", "/tasks/v1/lists/@default/tasks", strings.NewReader(taskPayload))
+	taskReq.Header.Set("Authorization", "Bearer test-token")
+	taskReq.Header.Set("Content-Type", "application/json")
+	taskW := httptest.NewRecorder()
+	r.ServeHTTP(taskW, taskReq)
+	if taskW.Code != http.StatusCreated {
+		t.Fatalf("failed to create task: %s", taskW.Body.String())
+	}
+
+	rawEmail := "From: test@example.com\r\nTo: recipient@example.com\r\nSubject: Reset Test\r\n\r\nTest."
+	encodedEmail := base64.URLEncoding.EncodeToString([]byte(rawEmail))
+	msgPayload := `{"raw": "` + encodedEmail + `"}`
+	msgReq := httptest.NewRequest("POST", "/gmail/v1/users/me/messages/send", strings.NewReader(msgPayload))
+	msgReq.Header.Set("Authorization", "Bearer test-token")
+	msgReq.Header.Set("Content-Type", "application/json")
+	msgW := httptest.NewRecorder()
+	r.ServeHTTP(msgW, msgReq)
+	if msgW.Code != http.StatusOK {
+		t.Fatalf("failed to create message: %s", msgW.Body.String())
+	}
+
+	eventPayload := `{"summary": "Reset Test Event", "start": {"dateTime": "2025-01-15T10:00:00Z"}, "end": {"dateTime": "2025-01-15T11:00:00Z"}}`
+	eventReq := httptest.NewRequest("POST", "/calendar/v3/calendars/primary/events", strings.NewReader(eventPayload))
+	eventReq.Header.Set("Authorization", "Bearer test-token")
+	eventReq.Header.Set("Content-Type", "application/json")
+	eventW := httptest.NewRecorder()
+	r.ServeHTTP(eventW, eventReq)
+	if eventW.Code != http.StatusCreated {
+		t.Fatalf("failed to create event: %s", eventW.Body.String())
+	}
+
+	contactPayload := `{"names": [{"displayName": "Reset Test"}], "emailAddresses": [{"value": "reset@test.com"}]}`
+	contactReq := httptest.NewRequest("POST", "/v1/people:createContact", strings.NewReader(contactPayload))
+	contactReq.Header.Set("Authorization", "Bearer test-token")
+	contactReq.Header.Set("Content-Type", "application/json")
+	contactW := httptest.NewRecorder()
+	r.ServeHTTP(contactW, contactReq)
+	if contactW.Code != http.StatusCreated {
+		t.Fatalf("failed to create contact: %s", contactW.Body.String())
+	}
+
+	// Step 2: Verify data exists
+	tasksReq := httptest.NewRequest("GET", "/tasks/v1/lists/@default/tasks", nil)
+	tasksReq.Header.Set("Authorization", "Bearer test-token")
+	tasksW := httptest.NewRecorder()
+	r.ServeHTTP(tasksW, tasksReq)
+	var tasksResp map[string]interface{}
+	json.NewDecoder(tasksW.Body).Decode(&tasksResp)
+	if items, ok := tasksResp["items"].([]interface{}); !ok || len(items) == 0 {
+		t.Fatalf("tasks should exist before reset")
+	}
+
+	// Step 3: Call Reset
+	ctx := context.Background()
+	if err := p.Reset(ctx); err != nil {
+		t.Fatalf("Reset() failed: %v", err)
+	}
+
+	// Step 4: Verify all data is cleared
+	tasksReq2 := httptest.NewRequest("GET", "/tasks/v1/lists/@default/tasks", nil)
+	tasksReq2.Header.Set("Authorization", "Bearer test-token")
+	tasksW2 := httptest.NewRecorder()
+	r.ServeHTTP(tasksW2, tasksReq2)
+	var tasksResp2 map[string]interface{}
+	json.NewDecoder(tasksW2.Body).Decode(&tasksResp2)
+	if items, ok := tasksResp2["items"].([]interface{}); ok && len(items) > 0 {
+		t.Errorf("tasks should be empty after reset, got %d items", len(items))
+	}
+
+	msgReq2 := httptest.NewRequest("GET", "/gmail/v1/users/me/messages", nil)
+	msgReq2.Header.Set("Authorization", "Bearer test-token")
+	msgW2 := httptest.NewRecorder()
+	r.ServeHTTP(msgW2, msgReq2)
+	var msgResp2 map[string]interface{}
+	json.NewDecoder(msgW2.Body).Decode(&msgResp2)
+	if messages, ok := msgResp2["messages"].([]interface{}); ok && len(messages) > 0 {
+		t.Errorf("messages should be empty after reset, got %d items", len(messages))
+	}
+
+	eventsReq2 := httptest.NewRequest("GET", "/calendar/v3/calendars/primary/events", nil)
+	eventsReq2.Header.Set("Authorization", "Bearer test-token")
+	eventsW2 := httptest.NewRecorder()
+	r.ServeHTTP(eventsW2, eventsReq2)
+	var eventsResp2 map[string]interface{}
+	json.NewDecoder(eventsW2.Body).Decode(&eventsResp2)
+	if items, ok := eventsResp2["items"].([]interface{}); ok && len(items) > 0 {
+		t.Errorf("events should be empty after reset, got %d items", len(items))
+	}
+
+	contactsReq2 := httptest.NewRequest("GET", "/v1/people/me/connections", nil)
+	contactsReq2.Header.Set("Authorization", "Bearer test-token")
+	contactsW2 := httptest.NewRecorder()
+	r.ServeHTTP(contactsW2, contactsReq2)
+	var contactsResp2 map[string]interface{}
+	json.NewDecoder(contactsW2.Body).Decode(&contactsResp2)
+	if connections, ok := contactsResp2["connections"].([]interface{}); ok && len(connections) > 0 {
+		t.Errorf("contacts should be empty after reset, got %d items", len(connections))
+	}
+}
+
+// TestSeedPopulatesData tests that Seed() populates data
+func TestSeedPopulatesData(t *testing.T) {
+	p := setupTestPlugin(t)
+	r := chi.NewRouter()
+	r.Use(auth.Middleware)
+	p.RegisterRoutes(r)
+
+	// Verify data is initially empty
+	tasksReq := httptest.NewRequest("GET", "/tasks/v1/lists/@default/tasks", nil)
+	tasksReq.Header.Set("Authorization", "Bearer test-token")
+	tasksW := httptest.NewRecorder()
+	r.ServeHTTP(tasksW, tasksReq)
+	var tasksResp map[string]interface{}
+	json.NewDecoder(tasksW.Body).Decode(&tasksResp)
+	if items, ok := tasksResp["items"].([]interface{}); ok && len(items) > 0 {
+		t.Fatalf("tasks should be empty before seed, got %d items", len(items))
+	}
+
+	// Call Seed
+	ctx := context.Background()
+	result, err := p.Seed(ctx, "small")
+	if err != nil {
+		t.Fatalf("Seed() failed: %v", err)
+	}
+
+	// Verify summary is non-empty
+	if result.Summary == "" {
+		t.Errorf("Seed() returned empty summary")
+	}
+
+	// Verify records were created
+	if result.Records["messages"] == 0 && result.Records["events"] == 0 &&
+		result.Records["contacts"] == 0 && result.Records["tasks"] == 0 {
+		t.Errorf("Seed() created no records: %v", result.Records)
+	}
+
+	t.Logf("Seed result: %s (records: %v)", result.Summary, result.Records)
 }

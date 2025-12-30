@@ -27,6 +27,10 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Get("/", h.dashboard)
 		r.Get("/guide", h.guide)
 
+		// API endpoints for eval harness
+		r.Post("/reset", h.resetAll)
+		r.Post("/seed", h.seedAll)
+
 		// Redirect old Google routes to new plugin routes
 		r.Get("/gmail", h.redirectToPluginRoute("/admin/plugins/google/messages"))
 		r.Get("/gmail/new", h.redirectToPluginRoute("/admin/plugins/google/messages/new"))
@@ -350,4 +354,81 @@ func (h *Handlers) redirectPeopleView(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) redirectTasksView(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	http.Redirect(w, r, "/admin/plugins/google/tasks/"+id, http.StatusMovedPermanently)
+}
+
+// resetAll clears all data from all resettable plugins
+func (h *Handlers) resetAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var errors []string
+	var reset []string
+
+	for _, plugin := range core.All() {
+		if resettable, ok := plugin.(core.ResettablePlugin); ok {
+			if err := resettable.Reset(ctx); err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", plugin.Name(), err))
+			} else {
+				reset = append(reset, plugin.Name())
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if len(errors) > 0 {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"reset":   reset,
+			"errors":  errors,
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"reset":   reset,
+		"message": "All data cleared",
+	})
+}
+
+// seedAll populates test data in all plugins
+func (h *Handlers) seedAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get size from query param, default to "medium"
+	size := r.URL.Query().Get("size")
+	if size == "" {
+		size = "medium"
+	}
+
+	var errors []string
+	var results []map[string]any
+
+	for _, plugin := range core.All() {
+		seedData, err := plugin.Seed(ctx, size)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", plugin.Name(), err))
+			continue
+		}
+		results = append(results, map[string]any{
+			"plugin":  plugin.Name(),
+			"summary": seedData.Summary,
+			"records": seedData.Records,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if len(errors) > 0 && len(results) == 0 {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"errors":  errors,
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": len(errors) == 0,
+		"results": results,
+		"errors":  errors,
+	})
 }

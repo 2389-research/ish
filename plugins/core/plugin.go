@@ -47,3 +47,9 @@ type SeedData struct {
 	Summary string         // Human-readable summary
 	Records map[string]int // Resource counts: {"messages": 50}
 }
+
+// ResettablePlugin is implemented by plugins that support data reset
+type ResettablePlugin interface {
+	Plugin
+	Reset(ctx context.Context) error
+}

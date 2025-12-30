@@ -48,6 +48,14 @@ func (p *GooglePlugin) Schema() core.PluginSchema {
 
 // Seed implementation is in seed.go
 
+// Reset clears all data from the Google plugin
+func (p *GooglePlugin) Reset(ctx context.Context) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.ClearAll()
+}
+
 func (p *GooglePlugin) ValidateToken(token string) bool {
 	// Token validation will be implemented later
 	return true

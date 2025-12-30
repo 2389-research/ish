@@ -1441,3 +1441,26 @@ func (s *GoogleStore) CreateTaskFromForm(title, notes, due, status string) (*Tas
 	}
 	return s.CreateTask(task)
 }
+
+// ClearAll deletes all data from the Google plugin tables
+func (s *GoogleStore) ClearAll() error {
+	tables := []string{
+		"gmail_attachments",
+		"gmail_messages",
+		"gmail_threads",
+		"calendar_events",
+		"calendars",
+		"people",
+		"sync_tokens",
+		"tasks",
+		"task_lists",
+	}
+
+	for _, table := range tables {
+		if _, err := s.db.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("failed to clear %s: %w", table, err)
+		}
+	}
+
+	return nil
+}
