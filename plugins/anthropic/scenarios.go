@@ -12,6 +12,11 @@ import (
 
 // createScenario handles POST /v1/scenarios
 func (p *AnthropicPlugin) createScenario(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, http.StatusInternalServerError, "Plugin not initialized")
+		return
+	}
+
 	var scenario Scenario
 	if err := json.NewDecoder(r.Body).Decode(&scenario); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
@@ -30,6 +35,11 @@ func (p *AnthropicPlugin) createScenario(w http.ResponseWriter, r *http.Request)
 
 // listScenarios handles GET /v1/scenarios
 func (p *AnthropicPlugin) listScenarios(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, http.StatusInternalServerError, "Plugin not initialized")
+		return
+	}
+
 	scenarios, err := p.store.ListScenarios()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to list scenarios")
@@ -41,6 +51,11 @@ func (p *AnthropicPlugin) listScenarios(w http.ResponseWriter, r *http.Request) 
 
 // deleteScenarioHandler handles DELETE /v1/scenarios/{id}
 func (p *AnthropicPlugin) deleteScenarioHandler(w http.ResponseWriter, r *http.Request) {
+	if p.store == nil {
+		writeError(w, http.StatusInternalServerError, "Plugin not initialized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 
 	if err := p.store.DeleteScenario(id); err != nil {
