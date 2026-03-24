@@ -6,7 +6,6 @@ package anthropic
 import (
 	"context"
 	"database/sql"
-	"net/http"
 
 	"github.com/2389/ish/plugins/core"
 	"github.com/go-chi/chi/v5"
@@ -58,9 +57,4 @@ func (p *AnthropicPlugin) SetDB(db *sql.DB) error {
 // Reset implements core.ResettablePlugin to clear all plugin data
 func (p *AnthropicPlugin) Reset(ctx context.Context) error {
 	return p.store.Reset()
-}
-
-// handleMessages is a stub for POST /v1/messages (implemented in a separate handler file)
-func (p *AnthropicPlugin) handleMessages(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
 }
