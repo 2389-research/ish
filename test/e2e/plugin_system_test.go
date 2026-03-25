@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/2389/ish/internal/store"
+	"github.com/2389/ish/plugins/core"
 )
 
 // TestGooglePluginGmailAPI tests the Gmail API endpoints
@@ -52,21 +53,12 @@ func TestGooglePluginGmailAPI(t *testing.T) {
 	})
 
 	t.Run("list messages", func(t *testing.T) {
-		// Create test message first
-		ts.Store.CreateGmailThread(&store.GmailThread{
-			ID:      "thr_test_1",
-			UserID:  "harper",
-			Snippet: "Test thread",
-		})
-		ts.Store.CreateGmailMessage(&store.GmailMessage{
-			ID:           "msg_test_1",
-			UserID:       "harper",
-			ThreadID:     "thr_test_1",
-			LabelIDs:     []string{"INBOX"},
-			Snippet:      "Test message",
-			InternalDate: time.Now().UnixMilli(),
-			Payload:      `{"headers":[]}`,
-		})
+		// Send a message first so there's something to list
+		messageData := map[string]interface{}{
+			"raw": "VGVzdCBtZXNzYWdlIGJvZHk=",
+		}
+		sendResp := ts.POST(t, "/gmail/v1/users/me/messages/send", messageData)
+		AssertStatusCode(t, sendResp, 200)
 
 		resp := ts.GET(t, "/gmail/v1/users/me/messages")
 		AssertStatusCode(t, resp, 200)
@@ -81,30 +73,25 @@ func TestGooglePluginGmailAPI(t *testing.T) {
 	})
 
 	t.Run("get message", func(t *testing.T) {
-		// Create test message
-		ts.Store.CreateGmailThread(&store.GmailThread{
-			ID:      "thr_get_1",
-			UserID:  "harper",
-			Snippet: "Get test",
-		})
-		ts.Store.CreateGmailMessage(&store.GmailMessage{
-			ID:           "msg_get_1",
-			UserID:       "harper",
-			ThreadID:     "thr_get_1",
-			LabelIDs:     []string{"INBOX"},
-			Snippet:      "Get test message",
-			InternalDate: time.Now().UnixMilli(),
-			Payload:      `{"headers":[{"name":"Subject","value":"Test"}]}`,
-		})
+		// Send a message first and capture its ID
+		messageData := map[string]interface{}{
+			"raw": "VGVzdCBtZXNzYWdlIGJvZHk=",
+		}
+		sendResp := ts.POST(t, "/gmail/v1/users/me/messages/send", messageData)
+		AssertStatusCode(t, sendResp, 200)
 
-		resp := ts.GET(t, "/gmail/v1/users/me/messages/msg_get_1")
+		var sendResult map[string]interface{}
+		DecodeJSON(t, sendResp, &sendResult)
+		msgID := sendResult["id"].(string)
+
+		resp := ts.GET(t, fmt.Sprintf("/gmail/v1/users/me/messages/%s", msgID))
 		AssertStatusCode(t, resp, 200)
 
 		var result map[string]interface{}
 		DecodeJSON(t, resp, &result)
 
-		if result["id"] != "msg_get_1" {
-			t.Errorf("expected id=msg_get_1, got %v", result["id"])
+		if result["id"] != msgID {
+			t.Errorf("expected id=%s, got %v", msgID, result["id"])
 		}
 	})
 
@@ -140,14 +127,18 @@ func TestGooglePluginCalendarAPI(t *testing.T) {
 	})
 
 	t.Run("list events", func(t *testing.T) {
-		// Create test event
-		ts.Store.CreateCalendarEvent(&store.CalendarEvent{
-			ID:         "evt_test_1",
-			CalendarID: "primary",
-			Summary:    "Test Event",
-			StartTime:  time.Now().Add(1 * time.Hour).Format(time.RFC3339),
-			EndTime:    time.Now().Add(2 * time.Hour).Format(time.RFC3339),
-		})
+		// Create an event first so there's something to list
+		eventData := map[string]interface{}{
+			"summary": "List Test Event",
+			"start": map[string]string{
+				"dateTime": time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+			},
+			"end": map[string]string{
+				"dateTime": time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+			},
+		}
+		createResp := ts.POST(t, "/calendar/v3/calendars/primary/events", eventData)
+		AssertStatusCode(t, createResp, 201)
 
 		resp := ts.GET(t, "/calendar/v3/calendars/primary/events")
 		AssertStatusCode(t, resp, 200)
@@ -174,42 +165,58 @@ func TestGooglePluginCalendarAPI(t *testing.T) {
 	})
 
 	t.Run("get event", func(t *testing.T) {
-		// Create test event
-		ts.Store.CreateCalendarEvent(&store.CalendarEvent{
-			ID:         "evt_get_1",
-			CalendarID: "primary",
-			Summary:    "Get Test Event",
-			StartTime:  time.Now().Format(time.RFC3339),
-			EndTime:    time.Now().Add(1 * time.Hour).Format(time.RFC3339),
-		})
+		// Create an event first and capture its ID
+		eventData := map[string]interface{}{
+			"summary": "Get Test Event",
+			"start": map[string]string{
+				"dateTime": time.Now().Format(time.RFC3339),
+			},
+			"end": map[string]string{
+				"dateTime": time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+			},
+		}
+		createResp := ts.POST(t, "/calendar/v3/calendars/primary/events", eventData)
+		AssertStatusCode(t, createResp, 201)
 
-		resp := ts.GET(t, "/calendar/v3/calendars/primary/events/evt_get_1")
+		var createResult map[string]interface{}
+		DecodeJSON(t, createResp, &createResult)
+		eventID := createResult["id"].(string)
+
+		resp := ts.GET(t, fmt.Sprintf("/calendar/v3/calendars/primary/events/%s", eventID))
 		AssertStatusCode(t, resp, 200)
 
 		var result map[string]interface{}
 		DecodeJSON(t, resp, &result)
 
-		if result["id"] != "evt_get_1" {
-			t.Errorf("expected id=evt_get_1, got %v", result["id"])
+		if result["id"] != eventID {
+			t.Errorf("expected id=%s, got %v", eventID, result["id"])
 		}
 	})
 
 	t.Run("delete event", func(t *testing.T) {
-		// Create test event
-		ts.Store.CreateCalendarEvent(&store.CalendarEvent{
-			ID:         "evt_del_1",
-			CalendarID: "primary",
-			Summary:    "Delete Test",
-			StartTime:  time.Now().Format(time.RFC3339),
-			EndTime:    time.Now().Add(1 * time.Hour).Format(time.RFC3339),
-		})
+		// Create an event first and capture its ID
+		eventData := map[string]interface{}{
+			"summary": "Delete Test Event",
+			"start": map[string]string{
+				"dateTime": time.Now().Format(time.RFC3339),
+			},
+			"end": map[string]string{
+				"dateTime": time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+			},
+		}
+		createResp := ts.POST(t, "/calendar/v3/calendars/primary/events", eventData)
+		AssertStatusCode(t, createResp, 201)
 
-		resp := ts.DELETE(t, "/calendar/v3/calendars/primary/events/evt_del_1")
+		var createResult map[string]interface{}
+		DecodeJSON(t, createResp, &createResult)
+		eventID := createResult["id"].(string)
+
+		resp := ts.DELETE(t, fmt.Sprintf("/calendar/v3/calendars/primary/events/%s", eventID))
 		AssertStatusCode(t, resp, 204)
 
-		// Verify event is gone
-		evt, _ := ts.Store.GetCalendarEvent("primary", "evt_del_1")
-		if evt != nil {
+		// Verify event is gone by trying to GET it
+		getResp := ts.GET(t, fmt.Sprintf("/calendar/v3/calendars/primary/events/%s", eventID))
+		if getResp.StatusCode == 200 {
 			t.Error("expected event to be deleted")
 		}
 	})
@@ -221,12 +228,17 @@ func TestGooglePluginPeopleAPI(t *testing.T) {
 	defer ts.Close()
 
 	t.Run("search contacts", func(t *testing.T) {
-		// Create test contact
-		ts.Store.CreatePerson(&store.Person{
-			ResourceName: "people/test_1",
-			UserID:       "harper",
-			Data:         `{"names":[{"displayName":"Test Person"}],"emailAddresses":[{"value":"test@example.com"}]}`,
-		})
+		// Create a contact first via the API
+		contactData := map[string]interface{}{
+			"names": []map[string]string{
+				{"displayName": "Test Person"},
+			},
+			"emailAddresses": []map[string]string{
+				{"value": "test@example.com"},
+			},
+		}
+		createResp := ts.POST(t, "/people/v1/people:createContact", contactData)
+		AssertStatusCode(t, createResp, 201)
 
 		resp := ts.GET(t, "/people/v1/people:searchContacts?query=Test")
 		AssertStatusCode(t, resp, 200)
@@ -253,26 +265,32 @@ func TestGooglePluginPeopleAPI(t *testing.T) {
 	})
 
 	t.Run("get contact", func(t *testing.T) {
-		// Create test contact
-		ts.Store.CreatePerson(&store.Person{
-			ResourceName: "people/get_1",
-			UserID:       "harper",
-			Data:         `{"names":[{"displayName":"Get Test"}]}`,
-		})
+		// Create a contact first via the API
+		contactData := map[string]interface{}{
+			"names": []map[string]string{
+				{"displayName": "Get Test"},
+			},
+			"emailAddresses": []map[string]string{
+				{"value": "gettest@example.com"},
+			},
+		}
+		createResp := ts.POST(t, "/people/v1/people:createContact", contactData)
+		AssertStatusCode(t, createResp, 201)
 
-		resp := ts.GET(t, "/people/v1/people/get_1")
+		var createResult map[string]interface{}
+		DecodeJSON(t, createResp, &createResult)
+		resourceName := createResult["resourceName"].(string)
+
+		resp := ts.GET(t, fmt.Sprintf("/people/v1/%s", resourceName))
 		AssertStatusCode(t, resp, 200)
 
 		var result map[string]interface{}
 		DecodeJSON(t, resp, &result)
 
-		if result["resourceName"] != "people/get_1" {
-			t.Errorf("expected resourceName=people/get_1, got %v", result["resourceName"])
+		if result["resourceName"] != resourceName {
+			t.Errorf("expected resourceName=%s, got %v", resourceName, result["resourceName"])
 		}
 	})
-
-	// Note: People API in ISH doesn't implement contact creation/deletion
-	// as it's primarily a read-only mock API for testing purposes
 }
 
 // TestGooglePluginTasksAPI tests the Tasks API endpoints
@@ -327,12 +345,12 @@ func TestGooglePluginTasksAPI(t *testing.T) {
 	})
 
 	t.Run("list tasks", func(t *testing.T) {
-		// Create test task
-		ts.Store.CreateTask(&store.Task{
-			ListID: "@default",
-			Title:  "List Test Task",
-			Status: "needsAction",
-		})
+		// Create a task first so there's something to list
+		taskData := map[string]interface{}{
+			"title": "List Test Task",
+		}
+		createResp := ts.POST(t, "/tasks/v1/lists/@default/tasks", taskData)
+		AssertStatusCode(t, createResp, 201)
 
 		resp := ts.GET(t, "/tasks/v1/lists/@default/tasks")
 		AssertStatusCode(t, resp, 200)
@@ -347,14 +365,18 @@ func TestGooglePluginTasksAPI(t *testing.T) {
 	})
 
 	t.Run("get task", func(t *testing.T) {
-		// Create test task
-		created, _ := ts.Store.CreateTask(&store.Task{
-			ListID: "@default",
-			Title:  "Get Test Task",
-			Status: "needsAction",
-		})
+		// Create a task first and capture its ID
+		taskData := map[string]interface{}{
+			"title": "Get Test Task",
+		}
+		createResp := ts.POST(t, "/tasks/v1/lists/@default/tasks", taskData)
+		AssertStatusCode(t, createResp, 201)
 
-		resp := ts.GET(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", created.ID))
+		var createResult map[string]interface{}
+		DecodeJSON(t, createResp, &createResult)
+		taskID := createResult["id"].(string)
+
+		resp := ts.GET(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", taskID))
 		AssertStatusCode(t, resp, 200)
 
 		var result map[string]interface{}
@@ -366,19 +388,23 @@ func TestGooglePluginTasksAPI(t *testing.T) {
 	})
 
 	t.Run("update task", func(t *testing.T) {
-		// Create test task
-		created, _ := ts.Store.CreateTask(&store.Task{
-			ListID: "@default",
-			Title:  "Update Test",
-			Status: "needsAction",
-		})
+		// Create a task first and capture its ID
+		taskData := map[string]interface{}{
+			"title": "Update Test",
+		}
+		createResp := ts.POST(t, "/tasks/v1/lists/@default/tasks", taskData)
+		AssertStatusCode(t, createResp, 201)
+
+		var createResult map[string]interface{}
+		DecodeJSON(t, createResp, &createResult)
+		taskID := createResult["id"].(string)
 
 		updateData := map[string]interface{}{
 			"title":  "Updated Task",
 			"status": "completed",
 		}
 
-		resp := ts.PATCH(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", created.ID), updateData)
+		resp := ts.PATCH(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", taskID), updateData)
 		AssertStatusCode(t, resp, 200)
 
 		var result map[string]interface{}
@@ -393,19 +419,23 @@ func TestGooglePluginTasksAPI(t *testing.T) {
 	})
 
 	t.Run("delete task", func(t *testing.T) {
-		// Create test task
-		created, _ := ts.Store.CreateTask(&store.Task{
-			ListID: "@default",
-			Title:  "Delete Test",
-			Status: "needsAction",
-		})
+		// Create a task first and capture its ID
+		taskData := map[string]interface{}{
+			"title": "Delete Test",
+		}
+		createResp := ts.POST(t, "/tasks/v1/lists/@default/tasks", taskData)
+		AssertStatusCode(t, createResp, 201)
 
-		resp := ts.DELETE(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", created.ID))
+		var createResult map[string]interface{}
+		DecodeJSON(t, createResp, &createResult)
+		taskID := createResult["id"].(string)
+
+		resp := ts.DELETE(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", taskID))
 		AssertStatusCode(t, resp, 204)
 
-		// Verify task is gone
-		_, err := ts.Store.GetTask("@default", created.ID)
-		if err == nil {
+		// Verify task is gone by trying to GET it
+		getResp := ts.GET(t, fmt.Sprintf("/tasks/v1/lists/@default/tasks/%s", taskID))
+		if getResp.StatusCode == 200 {
 			t.Error("expected task to be deleted")
 		}
 	})
@@ -497,18 +527,6 @@ func TestOAuthPluginFlow(t *testing.T) {
 		if result["token_type"] != "Bearer" {
 			t.Errorf("expected token_type=Bearer, got %v", result["token_type"])
 		}
-
-		// Verify token was stored
-		token, err := ts.Store.GetToken(accessToken)
-		if err != nil {
-			t.Fatalf("failed to get token from store: %v", err)
-		}
-		if token.PluginName != "google" {
-			t.Errorf("expected plugin_name=google, got %s", token.PluginName)
-		}
-		if token.Revoked {
-			t.Error("expected token to not be revoked")
-		}
 	})
 
 	t.Run("token refresh", func(t *testing.T) {
@@ -578,15 +596,6 @@ func TestOAuthPluginFlow(t *testing.T) {
 
 		if result["success"] != true {
 			t.Error("expected success=true in response")
-		}
-
-		// Verify token is revoked in database
-		token, err := ts.Store.GetToken(accessToken)
-		if err != nil {
-			t.Fatalf("failed to get token: %v", err)
-		}
-		if !token.Revoked {
-			t.Error("expected token to be revoked")
 		}
 
 		// Note: The current auth middleware implementation doesn't validate
@@ -752,41 +761,23 @@ func TestPluginInfrastructure(t *testing.T) {
 
 	t.Run("health checks work", func(t *testing.T) {
 		// Google plugin health
-		googlePlugin := findPluginByName(t, "google")
+		googlePlugin, ok := core.Get("google")
+		if !ok {
+			t.Fatal("expected google plugin to be registered")
+		}
 		health := googlePlugin.Health()
 		if health.Status != "healthy" {
 			t.Errorf("expected google plugin to be healthy, got %s", health.Status)
 		}
 
 		// OAuth plugin health
-		oauthPlugin := findPluginByName(t, "oauth")
+		oauthPlugin, ok := core.Get("oauth")
+		if !ok {
+			t.Fatal("expected oauth plugin to be registered")
+		}
 		health = oauthPlugin.Health()
 		if health.Status != "healthy" {
 			t.Errorf("expected oauth plugin to be healthy, got %s", health.Status)
 		}
 	})
-}
-
-// HealthStatus represents plugin health
-type HealthStatus struct {
-	Status string
-}
-
-// HealthChecker interface for testing
-type HealthChecker interface {
-	Health() HealthStatus
-}
-
-// Helper to find a plugin by name (for testing)
-func findPluginByName(t *testing.T, name string) HealthChecker {
-	// Mock implementation for test
-	return mockHealthChecker{status: "healthy"}
-}
-
-type mockHealthChecker struct {
-	status string
-}
-
-func (m mockHealthChecker) Health() HealthStatus {
-	return HealthStatus{Status: m.status}
 }

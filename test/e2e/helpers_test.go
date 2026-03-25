@@ -20,7 +20,8 @@ import (
 	"github.com/2389/ish/internal/logging"
 	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
-	_ "github.com/2389/ish/plugins/discord" // Register Discord plugin
+	_ "github.com/2389/ish/plugins/anthropic" // Register Anthropic plugin
+	_ "github.com/2389/ish/plugins/discord"   // Register Discord plugin
 	_ "github.com/2389/ish/plugins/google"  // Register Google plugin
 	_ "github.com/2389/ish/plugins/oauth"   // Register OAuth plugin
 	"github.com/go-chi/chi/v5"
@@ -44,29 +45,6 @@ func StartTestServer(t *testing.T) *TestServer {
 	s, err := store.New(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
-	}
-
-	// Create default user
-	if err := s.CreateUser("harper"); err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	// Create default task list
-	if err := s.CreateTaskList(&store.TaskList{
-		ID:     "@default",
-		UserID: "harper",
-		Title:  "My Tasks",
-	}); err != nil {
-		t.Fatalf("failed to create task list: %v", err)
-	}
-
-	// Create primary calendar
-	if err := s.CreateCalendar(&store.Calendar{
-		ID:      "primary",
-		UserID:  "harper",
-		Summary: "Primary Calendar",
-	}); err != nil {
-		t.Fatalf("failed to create calendar: %v", err)
 	}
 
 	r := chi.NewRouter()

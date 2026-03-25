@@ -22,6 +22,7 @@ import (
 	"github.com/2389/ish/internal/logging"
 	"github.com/2389/ish/internal/store"
 	"github.com/2389/ish/plugins/core"
+	_ "github.com/2389/ish/plugins/anthropic"     // Register Anthropic plugin
 	_ "github.com/2389/ish/plugins/discord"       // Register Discord plugin
 	_ "github.com/2389/ish/plugins/github"        // Register GitHub plugin
 	_ "github.com/2389/ish/plugins/google"        // Register Google plugin
