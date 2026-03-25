@@ -15,6 +15,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
+	// Restrict to one connection so all queries share the same in-memory database.
+	db.SetMaxOpenConns(1)
 	return db
 }
 

@@ -75,9 +75,7 @@ func (p *AnthropicPlugin) handleMessages(w http.ResponseWriter, r *http.Request)
 			p.streamTextResponse(w, req.Model, fallbackText, string(bodyBytes), "")
 			return
 		}
-		// Unexpected error; still use fallback
-		fallbackText := "I understand your request. How can I help you?"
-		p.streamTextResponse(w, req.Model, fallbackText, string(bodyBytes), "")
+		writeError(w, http.StatusInternalServerError, "Failed to match scenario")
 		return
 	}
 

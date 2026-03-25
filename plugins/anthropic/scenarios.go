@@ -23,6 +23,19 @@ func (p *AnthropicPlugin) createScenario(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if scenario.ResponseType != "text" && scenario.ResponseType != "tool_use" {
+		writeError(w, http.StatusBadRequest, "response_type must be 'text' or 'tool_use'")
+		return
+	}
+	if scenario.ResponseType == "text" && scenario.ResponseText == "" {
+		writeError(w, http.StatusBadRequest, "response_text is required for text scenarios")
+		return
+	}
+	if scenario.ResponseType == "tool_use" && scenario.ToolName == "" {
+		writeError(w, http.StatusBadRequest, "tool_name is required for tool_use scenarios")
+		return
+	}
+
 	if err := p.store.CreateScenario(&scenario); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create scenario")
 		return

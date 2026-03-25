@@ -18,6 +18,7 @@ func writeSSEEvent(w io.Writer, event string, data interface{}) {
 // writeMessageStart writes a message_start SSE event with the initial message envelope.
 func writeMessageStart(w io.Writer, msgID, model string) {
 	writeSSEEvent(w, "message_start", map[string]interface{}{
+		"type": "message_start",
 		"message": map[string]interface{}{
 			"id":          msgID,
 			"type":        "message",
@@ -32,6 +33,7 @@ func writeMessageStart(w io.Writer, msgID, model string) {
 // writeContentBlockStart writes a content_block_start SSE event for a text block.
 func writeContentBlockStart(w io.Writer, index int, blockType string) {
 	writeSSEEvent(w, "content_block_start", map[string]interface{}{
+		"type":  "content_block_start",
 		"index": index,
 		"content_block": map[string]interface{}{
 			"type": blockType,
@@ -43,6 +45,7 @@ func writeContentBlockStart(w io.Writer, index int, blockType string) {
 // writeToolUseBlockStart writes a content_block_start SSE event for a tool_use block.
 func writeToolUseBlockStart(w io.Writer, index int, toolUseID, toolName string) {
 	writeSSEEvent(w, "content_block_start", map[string]interface{}{
+		"type":  "content_block_start",
 		"index": index,
 		"content_block": map[string]interface{}{
 			"type":  "tool_use",
@@ -56,6 +59,7 @@ func writeToolUseBlockStart(w io.Writer, index int, toolUseID, toolName string) 
 // writeTextDelta writes a content_block_delta SSE event with a text_delta payload.
 func writeTextDelta(w io.Writer, index int, text string) {
 	writeSSEEvent(w, "content_block_delta", map[string]interface{}{
+		"type":  "content_block_delta",
 		"index": index,
 		"delta": map[string]interface{}{
 			"type": "text_delta",
@@ -67,6 +71,7 @@ func writeTextDelta(w io.Writer, index int, text string) {
 // writeInputJSONDelta writes a content_block_delta SSE event with an input_json_delta payload.
 func writeInputJSONDelta(w io.Writer, index int, partialJSON string) {
 	writeSSEEvent(w, "content_block_delta", map[string]interface{}{
+		"type":  "content_block_delta",
 		"index": index,
 		"delta": map[string]interface{}{
 			"type":         "input_json_delta",
@@ -78,6 +83,7 @@ func writeInputJSONDelta(w io.Writer, index int, partialJSON string) {
 // writeContentBlockStop writes a content_block_stop SSE event.
 func writeContentBlockStop(w io.Writer, index int) {
 	writeSSEEvent(w, "content_block_stop", map[string]interface{}{
+		"type":  "content_block_stop",
 		"index": index,
 	})
 }
@@ -85,6 +91,7 @@ func writeContentBlockStop(w io.Writer, index int) {
 // writeMessageDelta writes a message_delta SSE event with the stop reason.
 func writeMessageDelta(w io.Writer, stopReason string) {
 	writeSSEEvent(w, "message_delta", map[string]interface{}{
+		"type": "message_delta",
 		"delta": map[string]interface{}{
 			"stop_reason": stopReason,
 		},
@@ -93,5 +100,7 @@ func writeMessageDelta(w io.Writer, stopReason string) {
 
 // writeMessageStop writes a message_stop SSE event.
 func writeMessageStop(w io.Writer) {
-	writeSSEEvent(w, "message_stop", map[string]interface{}{})
+	writeSSEEvent(w, "message_stop", map[string]interface{}{
+		"type": "message_stop",
+	})
 }

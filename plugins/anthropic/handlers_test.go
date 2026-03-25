@@ -18,10 +18,14 @@ import (
 )
 
 func setupTestPlugin(t *testing.T) *AnthropicPlugin {
+	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
+	// Restrict to one connection so all queries share the same in-memory database.
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
 
 	plugin := &AnthropicPlugin{}
 	if err := plugin.SetDB(db); err != nil {

@@ -56,5 +56,8 @@ func (p *AnthropicPlugin) SetDB(db *sql.DB) error {
 
 // Reset implements core.ResettablePlugin to clear all plugin data
 func (p *AnthropicPlugin) Reset(ctx context.Context) error {
+	if p.store == nil {
+		return nil
+	}
 	return p.store.Reset()
 }
