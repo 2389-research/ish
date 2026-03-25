@@ -15,6 +15,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
+	// Restrict to one connection so the webhook worker goroutine shares the
+	// same in-memory database as the connection that created the tables.
+	db.SetMaxOpenConns(1)
 	return db
 }
 
