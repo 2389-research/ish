@@ -16,7 +16,7 @@ import (
 	"github.com/2389/ish/internal/store"
 )
 
-const maxBodySize = 10 * 1024 // 10KB limit for body capture
+const maxBodySize = 1024 * 1024 // 1MB limit for body capture
 
 type responseWriter struct {
 	http.ResponseWriter

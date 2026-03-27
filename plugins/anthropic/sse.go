@@ -95,6 +95,10 @@ func writeMessageDelta(w io.Writer, stopReason string) {
 		"delta": map[string]interface{}{
 			"stop_reason": stopReason,
 		},
+		"usage": map[string]interface{}{
+			"input_tokens":  0,
+			"output_tokens": 0,
+		},
 	})
 }
 
