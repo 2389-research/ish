@@ -1,5 +1,5 @@
-// ABOUTME: HTTP handler for POST /v1/messages with SSE streaming
-// ABOUTME: Matches user messages against scenarios and streams Anthropic-format responses
+// ABOUTME: HTTP handler for POST /v1/messages with SSE streaming and JSON non-streaming transports
+// ABOUTME: Matches user messages against scenarios and returns Anthropic-format responses
 
 package anthropic
 
@@ -26,7 +26,9 @@ type messageContent struct {
 	Content json.RawMessage `json:"content"`
 }
 
-// handleMessages handles POST /v1/messages and streams SSE responses.
+// handleMessages handles POST /v1/messages. It returns SSE events when
+// req.Stream is true and a single JSON Message body otherwise (matching real
+// Anthropic, where stream defaults to false).
 func (p *AnthropicPlugin) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if p.store == nil {
 		writeError(w, http.StatusInternalServerError, "Plugin not initialized")
@@ -60,7 +62,11 @@ func (p *AnthropicPlugin) handleMessages(w http.ResponseWriter, r *http.Request)
 	if containsToolResult(lastMsg) {
 		toolContent := extractToolResultContent(lastMsg)
 		responseText := "Based on the tool result: " + toolContent
-		p.streamTextResponse(w, req.Model, responseText, string(bodyBytes), "")
+		if req.Stream {
+			p.streamTextResponse(w, req.Model, responseText, string(bodyBytes), "")
+		} else {
+			p.respondTextNonStream(w, req.Model, responseText, string(bodyBytes), "")
+		}
 		return
 	}
 
@@ -72,7 +78,11 @@ func (p *AnthropicPlugin) handleMessages(w http.ResponseWriter, r *http.Request)
 		if err == sql.ErrNoRows {
 			// No scenarios match; use hardcoded fallback
 			fallbackText := "I understand your request. How can I help you?"
-			p.streamTextResponse(w, req.Model, fallbackText, string(bodyBytes), "")
+			if req.Stream {
+				p.streamTextResponse(w, req.Model, fallbackText, string(bodyBytes), "")
+			} else {
+				p.respondTextNonStream(w, req.Model, fallbackText, string(bodyBytes), "")
+			}
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "Failed to match scenario")
@@ -80,9 +90,17 @@ func (p *AnthropicPlugin) handleMessages(w http.ResponseWriter, r *http.Request)
 	}
 
 	if scenario.ResponseType == "tool_use" {
-		p.streamToolUseResponse(w, req.Model, scenario, string(bodyBytes))
+		if req.Stream {
+			p.streamToolUseResponse(w, req.Model, scenario, string(bodyBytes))
+		} else {
+			p.respondToolUseNonStream(w, req.Model, scenario, string(bodyBytes))
+		}
 	} else {
-		p.streamTextResponse(w, req.Model, scenario.ResponseText, string(bodyBytes), scenario.ID)
+		if req.Stream {
+			p.streamTextResponse(w, req.Model, scenario.ResponseText, string(bodyBytes), scenario.ID)
+		} else {
+			p.respondTextNonStream(w, req.Model, scenario.ResponseText, string(bodyBytes), scenario.ID)
+		}
 	}
 }
 
@@ -137,6 +155,81 @@ func (p *AnthropicPlugin) streamToolUseResponse(w http.ResponseWriter, model str
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// respondTextNonStream returns a single JSON Message body with a text content
+// block. Mirrors streamTextResponse but for stream:false clients.
+func (p *AnthropicPlugin) respondTextNonStream(w http.ResponseWriter, model, text, requestBody, scenarioID string) {
+	p.store.CreateMessage(&Message{
+		RequestBody:  requestBody,
+		ResponseType: "text",
+		ScenarioID:   scenarioID,
+	})
+
+	msgID := "msg_" + strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
+
+	body := map[string]interface{}{
+		"id":   msgID,
+		"type": "message",
+		"role": "assistant",
+		"content": []map[string]interface{}{
+			{"type": "text", "text": text},
+		},
+		"model":         model,
+		"stop_reason":   "end_turn",
+		"stop_sequence": nil,
+		"usage": map[string]interface{}{
+			"input_tokens":  0,
+			"output_tokens": 0,
+		},
+	}
+	writeJSON(w, body)
+}
+
+// respondToolUseNonStream returns a single JSON Message body whose content
+// array holds a tool_use block. Mirrors streamToolUseResponse but for
+// stream:false clients.
+func (p *AnthropicPlugin) respondToolUseNonStream(w http.ResponseWriter, model string, scenario *Scenario, requestBody string) {
+	p.store.CreateMessage(&Message{
+		RequestBody:  requestBody,
+		ResponseType: "tool_use",
+		ScenarioID:   scenario.ID,
+	})
+
+	msgID := "msg_" + strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
+	toolUseID := "toolu_" + strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
+
+	// Scenario.ToolInput is stored as a JSON string; emit it as a JSON object
+	// rather than a string so the response matches real Anthropic.
+	var toolInput interface{} = map[string]interface{}{}
+	if scenario.ToolInput != "" {
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(scenario.ToolInput), &parsed); err == nil {
+			toolInput = parsed
+		}
+	}
+
+	body := map[string]interface{}{
+		"id":   msgID,
+		"type": "message",
+		"role": "assistant",
+		"content": []map[string]interface{}{
+			{
+				"type":  "tool_use",
+				"id":    toolUseID,
+				"name":  scenario.ToolName,
+				"input": toolInput,
+			},
+		},
+		"model":         model,
+		"stop_reason":   "tool_use",
+		"stop_sequence": nil,
+		"usage": map[string]interface{}{
+			"input_tokens":  0,
+			"output_tokens": 0,
+		},
+	}
+	writeJSON(w, body)
 }
 
 // containsToolResult checks if the message is a user message containing a tool_result block.

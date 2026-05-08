@@ -393,3 +393,200 @@ func TestHandleMessagesNoScenarios(t *testing.T) {
 		t.Fatal("Missing end_turn stop reason in fallback response")
 	}
 }
+
+// assertNonStreamMessageEnvelope checks the common JSON envelope fields
+// returned by stream:false responses.
+func assertNonStreamMessageEnvelope(t *testing.T, w *httptest.ResponseRecorder, expectedModel string) map[string]interface{} {
+	t.Helper()
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "application/json") {
+		t.Fatalf("Expected Content-Type application/json, got %q", contentType)
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode JSON: %v", err)
+	}
+
+	if id, _ := resp["id"].(string); !strings.HasPrefix(id, "msg_") {
+		t.Fatalf("Expected id to start with 'msg_', got %v", resp["id"])
+	}
+	if resp["type"] != "message" {
+		t.Fatalf("Expected type 'message', got %v", resp["type"])
+	}
+	if resp["role"] != "assistant" {
+		t.Fatalf("Expected role 'assistant', got %v", resp["role"])
+	}
+	if resp["model"] != expectedModel {
+		t.Fatalf("Expected model %q, got %v", expectedModel, resp["model"])
+	}
+	if _, ok := resp["usage"].(map[string]interface{}); !ok {
+		t.Fatalf("Expected usage object, got %v", resp["usage"])
+	}
+
+	return resp
+}
+
+func TestHandleMessagesNonStreamText(t *testing.T) {
+	plugin := setupTestPlugin(t)
+
+	plugin.store.CreateScenario(&Scenario{
+		Pattern:      "hello",
+		ResponseType: "text",
+		ResponseText: "Hi there!",
+		Priority:     10,
+	})
+
+	w := sendMessage(t, plugin, map[string]interface{}{
+		"model":  "claude-sonnet-4-20250514",
+		"stream": false,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "hello world"},
+		},
+	})
+
+	resp := assertNonStreamMessageEnvelope(t, w, "claude-sonnet-4-20250514")
+
+	if resp["stop_reason"] != "end_turn" {
+		t.Fatalf("Expected stop_reason 'end_turn', got %v", resp["stop_reason"])
+	}
+
+	content, ok := resp["content"].([]interface{})
+	if !ok || len(content) != 1 {
+		t.Fatalf("Expected content array of length 1, got %v", resp["content"])
+	}
+	block := content[0].(map[string]interface{})
+	if block["type"] != "text" {
+		t.Fatalf("Expected content[0].type 'text', got %v", block["type"])
+	}
+	if block["text"] != "Hi there!" {
+		t.Fatalf("Expected scenario text, got %v", block["text"])
+	}
+}
+
+func TestHandleMessagesNonStreamDefaultsToJSON(t *testing.T) {
+	// Real Anthropic treats a missing `stream` field as false. Verify the
+	// mock matches that behavior.
+	plugin := setupTestPlugin(t)
+
+	plugin.store.CreateScenario(&Scenario{
+		Pattern:      "hello",
+		ResponseType: "text",
+		ResponseText: "Hi there!",
+		Priority:     10,
+	})
+
+	w := sendMessage(t, plugin, map[string]interface{}{
+		"model": "claude-sonnet-4-20250514",
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "hello world"},
+		},
+	})
+
+	assertNonStreamMessageEnvelope(t, w, "claude-sonnet-4-20250514")
+}
+
+func TestHandleMessagesNonStreamToolUse(t *testing.T) {
+	plugin := setupTestPlugin(t)
+
+	plugin.store.CreateScenario(&Scenario{
+		Pattern:      "weather",
+		ResponseType: "tool_use",
+		ToolName:     "get_weather",
+		ToolInput:    `{"location":"San Francisco"}`,
+		Priority:     10,
+	})
+
+	w := sendMessage(t, plugin, map[string]interface{}{
+		"model":  "claude-sonnet-4-20250514",
+		"stream": false,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "what's the weather"},
+		},
+	})
+
+	resp := assertNonStreamMessageEnvelope(t, w, "claude-sonnet-4-20250514")
+
+	if resp["stop_reason"] != "tool_use" {
+		t.Fatalf("Expected stop_reason 'tool_use', got %v", resp["stop_reason"])
+	}
+
+	content, ok := resp["content"].([]interface{})
+	if !ok || len(content) != 1 {
+		t.Fatalf("Expected content array of length 1, got %v", resp["content"])
+	}
+	block := content[0].(map[string]interface{})
+	if block["type"] != "tool_use" {
+		t.Fatalf("Expected content[0].type 'tool_use', got %v", block["type"])
+	}
+	if id, _ := block["id"].(string); !strings.HasPrefix(id, "toolu_") {
+		t.Fatalf("Expected tool_use id to start with 'toolu_', got %v", block["id"])
+	}
+	if block["name"] != "get_weather" {
+		t.Fatalf("Expected tool name 'get_weather', got %v", block["name"])
+	}
+
+	input, ok := block["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected input to be a JSON object, got %v (type %T)", block["input"], block["input"])
+	}
+	if input["location"] != "San Francisco" {
+		t.Fatalf("Expected input.location 'San Francisco', got %v", input["location"])
+	}
+}
+
+func TestHandleMessagesNonStreamToolResultFollowUp(t *testing.T) {
+	plugin := setupTestPlugin(t)
+
+	w := sendMessage(t, plugin, map[string]interface{}{
+		"model":  "claude-sonnet-4-20250514",
+		"stream": false,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "what's the weather"},
+			{"role": "assistant", "content": []map[string]interface{}{
+				{"type": "tool_use", "id": "toolu_123", "name": "get_weather", "input": map[string]interface{}{"location": "SF"}},
+			}},
+			{"role": "user", "content": []map[string]interface{}{
+				{"type": "tool_result", "tool_use_id": "toolu_123", "content": "72 degrees and sunny"},
+			}},
+		},
+	})
+
+	resp := assertNonStreamMessageEnvelope(t, w, "claude-sonnet-4-20250514")
+	if resp["stop_reason"] != "end_turn" {
+		t.Fatalf("Expected stop_reason 'end_turn', got %v", resp["stop_reason"])
+	}
+
+	content := resp["content"].([]interface{})
+	block := content[0].(map[string]interface{})
+	if !strings.Contains(block["text"].(string), "72 degrees and sunny") {
+		t.Fatalf("Expected tool result text in response, got %v", block["text"])
+	}
+}
+
+func TestHandleMessagesNonStreamFallback(t *testing.T) {
+	plugin := setupTestPlugin(t)
+
+	// No scenarios seeded; non-streaming should still produce a valid Message.
+	w := sendMessage(t, plugin, map[string]interface{}{
+		"model":  "claude-sonnet-4-20250514",
+		"stream": false,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "anything"},
+		},
+	})
+
+	resp := assertNonStreamMessageEnvelope(t, w, "claude-sonnet-4-20250514")
+	if resp["stop_reason"] != "end_turn" {
+		t.Fatalf("Expected stop_reason 'end_turn', got %v", resp["stop_reason"])
+	}
+	content := resp["content"].([]interface{})
+	if len(content) != 1 {
+		t.Fatalf("Expected one content block, got %d", len(content))
+	}
+}
